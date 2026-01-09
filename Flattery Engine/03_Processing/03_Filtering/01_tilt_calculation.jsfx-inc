@@ -1,0 +1,165 @@
+// Surround FFT Flattener - Tilt Filter Calculation
+
+@init
+
+// Tilt filter constants
+// Note: SFF_TILT_CENTER_HZ is now a variable (tilt_freq_hz) set from parameters
+SFF_TILT_LOW_MULT = 0.25;  // Tilt multiplier at 0Hz (25% strength)
+SFF_TILT_CENTER_MULT = 1.0;  // Tilt multiplier at center (100% strength, no change)
+SFF_TILT_HIGH_MULT = 4.0;  // Tilt multiplier at Nyquist (400% strength)
+
+// Calculate tilt multiplier for a given frequency
+// Tilt is centered at tilt_freq_hz with 25% strength at 0Hz and 400% strength at Nyquist
+// Uses the same blended linear/logarithmic mapping as the graph display (85% log / 15% linear)
+// This ensures the tilt appears linear on the graph while maintaining mostly logarithmic audio response
+// Returns multiplier: 0.25 at 0Hz, 1.0 at tilt_freq_hz, 4.0 at Nyquist
+// NOTE: Uses sff_freq_to_pos from math utils - function must be defined before this is called
+// NOTE: tilt_freq_hz must be set from parameters before calling this function
+function sff_calculate_tilt_multiplier(freq_hz) local(
+  nyquist_hz, min_freq, max_freq, freq_pos, center_pos, normalized_pos, center_normalized, s_curve, ratio_curved, center_s_curve, center_ratio_curved, center_sq, denom, denom_abs, a, b, tilt_mult
+) (
+  // Get Nyquist frequency and frequency range (matching graph display)
+  nyquist_hz = srate * 0.5;
+  min_freq = 10.0;  // Match graph min_freq
+  max_freq = nyquist_hz;
+  
+  // Handle edge cases
+  freq_hz <= 0 ? (
+    tilt_mult = SFF_TILT_LOW_MULT;
+  ) : freq_hz >= nyquist_hz ? (
+    tilt_mult = SFF_TILT_HIGH_MULT;
+  ) : (
+    // Use the exact same function as the graph display to convert frequency to position
+    // This ensures perfect matching with how frequencies are displayed
+    freq_pos = sff_freq_to_pos(freq_hz, min_freq, max_freq);
+    center_pos = sff_freq_to_pos(tilt_freq_hz, min_freq, max_freq);
+    
+    // Interpolate tilt multiplier using a single smooth quadratic formula with S-curve ease-in-out
+    // Single continuous function eliminates corner at center point
+    // Uses quadratic (ratio^2) throughout with smoothstep for S-curve shape
+    
+    // Normalize position: 0 at left edge, 1 at right edge, center_pos at 1.8kHz
+    normalized_pos = freq_pos;  // Already 0-1 from sff_freq_to_pos
+    center_normalized = center_pos;  // Center position in 0-1 range
+    
+    // Apply smoothstep for S-curve ease-in-out: smoothstep(t) = 3t^2 - 2t^3
+    // This creates smooth acceleration at start and deceleration at end
+    s_curve = normalized_pos * normalized_pos * (3.0 - 2.0 * normalized_pos);
+    
+    // Apply quadratic throughout: square the S-curve value
+    // This gives us quadratic behavior with smooth S-curve ease-in-out
+    ratio_curved = s_curve * s_curve;
+    
+    // Single continuous formula mapping ratio_curved (0 to 1) to tilt_mult (0.25 to 4.0)
+    // We need: ratio_curved=0 -> 0.25, ratio_curved at center -> 1.0, ratio_curved=1 -> 4.0
+    // Use a quadratic interpolation through three points for smooth continuous curve
+    
+    // Calculate center point in curved space
+    center_s_curve = center_normalized * center_normalized * (3.0 - 2.0 * center_normalized);
+    center_ratio_curved = center_s_curve * center_s_curve;
+    
+    // Single continuous quadratic interpolation through three points:
+    // (0, 0.25), (center_ratio_curved, 1.0), (1.0, 4.0)
+    // Use Lagrange interpolation or quadratic formula
+    // For three points, we can use: y = a*x^2 + b*x + c
+    // Solving for a, b, c:
+    // At x=0: c = 0.25
+    // At x=center_ratio_curved: a*center^2 + b*center + 0.25 = 1.0
+    // At x=1: a + b + 0.25 = 4.0
+    
+    // Solve system:
+    // a*center^2 + b*center = 0.75
+    // a + b = 3.75
+    // b = 3.75 - a
+    // a*center^2 + (3.75 - a)*center = 0.75
+    // a*center^2 + 3.75*center - a*center = 0.75
+    // a*(center^2 - center) = 0.75 - 3.75*center
+    // a = (0.75 - 3.75*center) / (center^2 - center)
+    // b = 3.75 - a
+    
+    center_sq = center_ratio_curved * center_ratio_curved;
+    denom = center_sq - center_ratio_curved;
+    denom_abs = abs(denom);
+    denom_abs > eps ? (
+      a = (0.75 - 3.75 * center_ratio_curved) / denom;
+      b = 3.75 - a;
+      tilt_mult = a * ratio_curved * ratio_curved + b * ratio_curved + 0.25;
+    ) : (
+      // Fallback to linear if center is at edge
+      tilt_mult = SFF_TILT_LOW_MULT + ratio_curved * (SFF_TILT_HIGH_MULT - SFF_TILT_LOW_MULT);
+    );
+    
+    // Clamp to ensure we stay in valid range
+    tilt_mult = sff_clamp(tilt_mult, SFF_TILT_LOW_MULT, SFF_TILT_HIGH_MULT);
+  );
+  
+  tilt_mult;
+);
+
+// Calculate tilt multiplier scaled by tilt_amount
+// Returns multiplier scaled by tilt_amount: 1.0 at 0%, tilt_mult at +100%, inverted at -100%
+function sff_calculate_tilt_multiplier_scaled(filter_freq) local(
+  tilt_mult, tilt_mult_scaled, tilt_mult_inv
+) (
+  tilt_mult_scaled = 1.0;  // Default: no tilt
+  abs(tilt_amount) > 0.001 ? (
+    // Calculate tilt multiplier for this frequency (0.25 to 4.0 range)
+    tilt_mult = sff_calculate_tilt_multiplier(filter_freq);
+    // Interpolate between 1.0 (no tilt) and calculated multiplier based on tilt_amount
+    // tilt_amount = 0: multiplier = 1.0 (no effect)
+    // tilt_amount > 0: multiplier = tilt_mult (normal tilt: low reduced, high boosted)
+    // tilt_amount < 0: multiplier = inverted (inverse tilt: low boosted, high reduced)
+    tilt_amount > 0 ? (
+      // Normal tilt: low frequencies reduced, high frequencies boosted
+      tilt_mult_scaled = 1.0 + (tilt_mult - 1.0) * tilt_amount;
+    ) : (
+      // Inverse tilt: invert the multiplier (1.0 / tilt_mult), then apply negative tilt_amount
+      // This gives: low frequencies boosted, high frequencies reduced
+      tilt_mult_inv = 1.0 / tilt_mult;  // Invert: 4.0 -> 0.25, 1.0 -> 1.0, 0.25 -> 4.0
+      tilt_mult_scaled = 1.0 + (tilt_mult_inv - 1.0) * abs(tilt_amount);
+    );
+  ) : 0;
+  tilt_mult_scaled;
+);
+
+// Apply tilt scaling to gain (handles normal and inverse tilt)
+function sff_apply_tilt_to_gain(gain_db, tilt_mult_scaled) (
+  gain_db * tilt_mult_scaled;
+);
+
+// Apply tilt compensation to maintain tonal balance
+function sff_apply_tilt_compensation(target_gain_linear, tilt_mult_scaled) local(
+  tilt_mult_db, compensation_db, compensation_linear
+) (
+  // Apply inverse gain compensation to maintain tonal balance
+  // When tilt is applied, it changes the relative strength of boosts/cuts across frequency
+  // To compensate, apply an inverse gain that's proportional to the tilt strength
+  // This helps maintain overall tonal balance while still allowing tilt to affect relative strength
+  // Compensation is reduced to 20% (40% * 0.5) to better match perceived tonal balance
+  // Uses dB scale for symmetric compensation (power scale, not linear)
+  abs(tilt_amount) > 0.001 ? (
+    // Convert tilt multiplier to dB for symmetric compensation
+    tilt_mult_db = sff_linear_to_db(tilt_mult_scaled);
+    // Apply inverse compensation in dB scale (negate the tilt effect)
+    compensation_db = -tilt_mult_db * abs(tilt_amount) * 0.2;  // 20% compensation, scaled by tilt amount
+    // Convert compensation back to linear
+    compensation_linear = sff_db_to_linear(compensation_db);
+    // Apply compensation to linear gain
+    target_gain_linear = target_gain_linear * compensation_linear;
+  ) : 0;
+  target_gain_linear;
+);
+
+// Update tilt multiplier cache for all filters
+// Call this when tilt_amount changes or when filters are initialized
+// Caches the base tilt multiplier (0.25 to 4.0 range) for each filter frequency
+// The cache stores the raw multiplier before scaling by tilt_amount
+function sff_update_tilt_multiplier_cache() local(i, filter_freq) (
+  i = 0;
+  loop(sff_filter_count,
+    filter_freq = sff_filter_freq[i];
+    sff_filter_tilt_multipliers[i] = sff_calculate_tilt_multiplier(filter_freq);
+    i += 1;
+  );
+);
+

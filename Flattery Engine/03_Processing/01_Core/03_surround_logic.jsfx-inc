@@ -1,0 +1,130 @@
+// Surround FFT Flattener - Core "surrounding bins" logic
+// Computes *ideal* delta (dB) between current bin magnitude and neighbor-based target.
+// Strength/attack/release applied elsewhere.
+
+@init
+
+// Return median of sff_median_buf[0..count-1]
+function sff_median_sort_buf(count) local(i, j, tmp) (
+  i = 1;
+  loop(count-1>0 ? count-1 : 0,
+    j = i;
+    while(j > 0 && sff_median_buf[j-1] > sff_median_buf[j]) (
+      tmp = sff_median_buf[j-1];
+      sff_median_buf[j-1] = sff_median_buf[j];
+      sff_median_buf[j] = tmp;
+      j -= 1;
+    );
+    i += 1;
+  );
+  sff_median_buf[(count*0.5)|0];
+);
+
+// Get magnitude value for bin; stereo = average L/R
+function sff_get_mag_value(mag_base, magL_base, magR_base, bin, is_stereo) (
+  is_stereo ? sff_stereo_avg(magL_base[bin], magR_base[bin]) : mag_base[bin];
+);
+
+// Collect neighbor magnitudes in dB into sff_median_buf. Skips bin itself.
+function sff_collect_neighbor_mags_db(mag_base, magL_base, magR_base, bin, radius, is_stereo) local(npos, rad, d, idx, count) (
+  npos = pos_bin_count|0;
+  rad = sff_clamp(radius, 1, SFF_MAX_MEDIAN_RADIUS);
+  count = 0;
+  d = -rad;
+  loop(rad*2 + 1,
+    d != 0 ? (
+      idx = sff_clamp_bin_index(bin + d, npos);
+      sff_median_buf[count] = sff_safe_linear_to_db(
+        sff_get_mag_value(mag_base, magL_base, magR_base, idx, is_stereo)
+      );
+      count += 1;
+    ) : 0;
+    d += 1;
+  );
+  count;
+);
+
+// Median neighbor (mono)
+function sff_median_target_lin(mag_base, bin, radius) local(count, mdb) (
+  count = sff_collect_neighbor_mags_db(mag_base, 0, 0, bin, radius, 0);
+  count > 0 ? sff_db_to_linear(sff_median_sort_buf(count)) : mag_base[bin];
+);
+
+// Median neighbor (stereo)
+function sff_median_target_lin_stereo(magL_base, magR_base, bin, radius) local(count, mdb) (
+  count = sff_collect_neighbor_mags_db(0, magL_base, magR_base, bin, radius, 1);
+  count > 0 ? sff_db_to_linear(sff_median_sort_buf(count))
+    : sff_db_to_linear(sff_safe_linear_to_db(sff_stereo_avg(magL_base[bin], magR_base[bin])));
+);
+
+// Weighted mean of neighbors (dB space), skips bin itself
+function sff_weighted_mean_neighbors(mag_base, magL_base, magR_base, bin, radius, is_stereo) local(npos, sum_db, count, d, idx, v_lin) (
+  npos = pos_bin_count|0; sum_db=0; count=0; d=1;
+  loop(radius,
+    idx = bin - d;
+    idx >= 0 ? (
+      idx = sff_clamp_bin_index(idx, npos);
+      sum_db += sff_safe_linear_to_db(sff_get_mag_value(mag_base, magL_base, magR_base, idx, is_stereo));
+      count += 1;
+    ) : 0;
+    idx = bin + d;
+    idx < npos ? (
+      idx = sff_clamp_bin_index(idx, npos);
+      sum_db += sff_safe_linear_to_db(sff_get_mag_value(mag_base, magL_base, magR_base, idx, is_stereo));
+      count += 1;
+    ) : 0;
+    d+=1;
+  );
+  count > 0 ? sff_db_to_linear(sum_db/count)
+    : sff_get_mag_value(mag_base, magL_base, magR_base, bin, is_stereo);
+);
+
+// Get mono/stereo neighbor target depending on mode
+function sff_neighbor_target_lin(mag_base, bin, radius) (
+  neighbor_mode==1
+    ? sff_median_target_lin(mag_base, bin, radius)
+    : sff_weighted_mean_neighbors(mag_base, 0, 0, bin, radius, 0)
+);
+function sff_neighbor_target_lin_stereo(magL_base, magR_base, bin, radius) (
+  neighbor_mode==1
+    ? sff_median_target_lin_stereo(magL_base, magR_base, bin, radius)
+    : sff_weighted_mean_neighbors(0, magL_base, magR_base, bin, radius, 1)
+);
+
+// Bin is active if within cutoff range and operate range
+function sff_bin_is_active(bin, mag_lin) (
+  (bin < low_cut_bin || bin > high_cut_bin) ? 0 :
+  (mag_lin >= sff_operate_min_lin && mag_lin <= sff_operate_max_lin);
+);
+
+// Delta in dB: 20*log10(target/mag), symmetric and level-agnostic
+function sff_compute_base_delta(mag_lin, target_lin, bin) local(ratio) (
+  ratio = target_lin / (mag_lin + eps);
+  ratio = max(ratio, eps);
+  sff_linear_to_db(ratio);
+);
+
+// Effective neighbor radius (no per-band scaling)
+function sff_compute_effective_radius(bin, radius) (
+  sff_clamp(floor(max(1, radius) + 0.5), 1, 24);
+);
+
+// Compute smoothing delta for bin (mono/stereo)
+function sff_compute_delta_db_unified(mag_base, magL_base, magR_base, bin, radius, is_stereo) local(mag_lin, radius_eff, target_lin, delta) (
+  mag_lin = sff_get_mag_value(mag_base, magL_base, magR_base, bin, is_stereo);
+  radius_eff = sff_compute_effective_radius(bin, radius);
+  target_lin = is_stereo
+    ? sff_neighbor_target_lin_stereo(magL_base, magR_base, bin, radius_eff)
+    : sff_neighbor_target_lin(mag_base, bin, radius_eff);
+  delta = sff_compute_base_delta(mag_lin, target_lin, bin);
+  sff_bin_is_active(bin, mag_lin) ? delta : 0;
+);
+
+// Mono and linked-stereo entry-points
+function sff_compute_delta_db_for_bin(mag_base, bin, radius) (
+  sff_compute_delta_db_unified(mag_base, 0, 0, bin, radius, 0);
+);
+function sff_compute_delta_db_for_bin_link(magL_base, magR_base, bin, radius) (
+  sff_compute_delta_db_unified(0, magL_base, magR_base, bin, radius, 1);
+);
+

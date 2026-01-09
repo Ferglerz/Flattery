@@ -1,0 +1,112 @@
+// Surround FFT Flattener - Graph Rendering Functions
+
+@init
+
+// Simplified background drawing with alternating colors
+function sff_draw_background(x0, y0, w, h, draw_bins, draw_bins_inv, min_freq, max_freq) local(i, even) (
+  i = 0;
+  loop(draw_bins,
+    even = ((i * bin_hz) % 2) == 0;
+    gfx_set(
+      even ? SFF_COLOR_BG_EVEN_R : SFF_COLOR_BG_ODD_R,
+      even ? SFF_COLOR_BG_EVEN_G : SFF_COLOR_BG_ODD_G,
+      even ? SFF_COLOR_BG_EVEN_B : SFF_COLOR_BG_ODD_B,
+      1
+    );
+    gfx_rect(x0 + SFF_UI_INNER_MARGIN + i * SFF_UI_BAR_WIDTH, y0 + SFF_UI_INNER_MARGIN, SFF_UI_BAR_WIDTH, h - 8);
+    i += 1;
+  );
+  // Draw border
+  gfx_set(SFF_COLOR_BORDER_R, SFF_COLOR_BORDER_G, SFF_COLOR_BORDER_B, 1);
+  gfx_line(x0, y0, x0 + w, y0, 0);
+  gfx_line(x0 + w, y0, x0 + w, y0 + h, 0);
+  gfx_line(x0 + w, y0 + h, x0, y0 + h, 0);
+  gfx_line(x0, y0 + h, x0, y0, 0);
+);
+
+// Simplified magnitude curve drawing
+function sff_draw_magnitude_curve(x0, y_base, h, draw_bins, min_freq, max_freq, low_cut_hz, high_cut_hz) local(i, x, y, lastx, lasty, v, mag_avg_db, scale) (
+  scale = 1.0 / SFF_MAGNITUDE_DB_SCALE;
+  lastx = lasty = -1;
+  i = 0;
+  loop(sff_display_bin_count,
+    mag_avg_db = sff_display_mag_db[i];
+    v = sff_clamp((mag_avg_db + SFF_MAGNITUDE_DB_SCALE)*scale, 0, 1);
+    y = y_base - v * ((h-8) * 0.5);
+    x = x0 + SFF_UI_INNER_MARGIN + i * SFF_UI_BAR_WIDTH;
+    (i > 0 && lastx >= 0) ? (
+      gfx_line(lastx, lasty, x, y, 0);
+    );
+    lastx = x; lasty = y;
+    i += 1;
+  );
+);
+
+// Simplified filter gain curve
+function sff_draw_filter_gain_curve(x0, y_base, h, draw_bins, min_freq, max_freq, low_cut_hz, high_cut_hz) local(i, x, y, lastx, lasty, v, gain_db, scale) (
+  scale = 1.0 / SFF_GAIN_DB_SCALE;
+  lastx = lasty = -1;
+  i = 0;
+  loop(sff_filter_count,
+    gain_db = sff_linear_to_db(sff_filter_gains[i]);
+    v = sff_clamp((gain_db + 12)*scale, 0, 1);
+    y = y_base - v * (h-8);
+    x = x0 + SFF_UI_INNER_MARGIN + i * SFF_UI_BAR_WIDTH;
+    (i > 0 && lastx >= 0) ? (
+      gfx_line(lastx, lasty, x, y, 0);
+    );
+    lastx = x; lasty = y;
+    i += 1;
+  );
+);
+
+// Center line at 0 dB
+function sff_draw_center_line(x0, y_base, h, avail_w) (
+  gfx_set(SFF_COLOR_CENTER_LINE_R, SFF_COLOR_CENTER_LINE_G, SFF_COLOR_CENTER_LINE_B, SFF_COLOR_CENTER_LINE_A);
+  gfx_line(x0 + SFF_UI_INNER_MARGIN, y_base - (h-8)*0.5, x0 + SFF_UI_INNER_MARGIN + avail_w, y_base - (h-8)*0.5, 1);
+);
+
+// Simplified tilt visualization
+function sff_draw_tilt_visualization(x0, y_base, h, draw_bins, draw_bins_inv, min_freq, max_freq) local(i, lastx, lasty, x, y, scale, tilt_db, tilt_mult, tilt_v) (
+  (abs(tilt_amount) > 0.001) ? (
+    // Always use purple/magenta color regardless of tilt direction
+    gfx_set(SFF_COLOR_TILT_NORMAL_R, SFF_COLOR_TILT_NORMAL_G, SFF_COLOR_TILT_NORMAL_B, SFF_COLOR_TILT_NORMAL_A);
+    scale = 1.0 / SFF_GAIN_DB_SCALE;
+    lastx = lasty = -1;
+    i = 0;
+    loop(draw_bins,
+      tilt_mult = sff_calculate_tilt_multiplier(sff_pos_to_freq(i * draw_bins_inv, min_freq, max_freq));
+      tilt_mult = tilt_amount > 0 ? (1.0 + (tilt_mult-1.0)*tilt_amount)
+                                  : (1.0 + ((1.0/tilt_mult)-1.0)*abs(tilt_amount));
+      tilt_db = sff_linear_to_db(tilt_mult);
+      // Scale tilt line to quarter height: map 0-1 range to 0.375-0.625 range (reduced by 50% from previous 0.25-0.75)
+      tilt_v = sff_clamp((tilt_db + 12) * scale, 0, 1);
+      y = y_base - (0.375 + tilt_v * 0.25) * (h-8);
+      x = x0 + SFF_UI_INNER_MARGIN + i;
+      (lastx >= 0) ? (
+        gfx_line(lastx|0, lasty, x|0, y, 0);
+      );
+      lastx = x; lasty = y; i += 1;
+    );
+  );
+);
+
+// Draw cut lines simply
+function sff_draw_cut_lines(low_cut_x, high_cut_x, triangle_top_y, y_base, triangle_size) (
+  sff_draw_cut_line(low_cut_x, triangle_top_y, y_base, triangle_size, SFF_COLOR_LOW_CUT_R, SFF_COLOR_LOW_CUT_G, SFF_COLOR_LOW_CUT_B);
+  sff_draw_cut_line(high_cut_x, triangle_top_y, y_base, triangle_size, SFF_COLOR_HIGH_CUT_R, SFF_COLOR_HIGH_CUT_G, SFF_COLOR_HIGH_CUT_B);
+);
+
+// Simplified label drawing
+function sff_draw_labels(x0, y_base, h, draw_bins, min_freq, max_freq) local(scale) (
+  scale = 1.0 / SFF_GAIN_DB_SCALE;
+  sff_draw_db_labels(SFF_DB_LABEL_START_NEG, SFF_DB_LABEL_END_NEG, SFF_DB_LABEL_STEP_NEG,
+    x0 + SFF_LABEL_OFFSET_X, y_base, h, scale, 0);
+  sff_draw_db_labels(SFF_DB_LABEL_START_POS, SFF_DB_LABEL_END_POS, SFF_DB_LABEL_STEP_POS,
+    x0 + SFF_LABEL_OFFSET_X, y_base, h, scale, 1);
+  sff_draw_frequency_label(SFF_FREQ_LABEL_500, min_freq, max_freq, x0, draw_bins, y_base, "500 Hz");
+  sff_draw_frequency_label(SFF_FREQ_LABEL_1K, min_freq, max_freq, x0, draw_bins, y_base, "1 kHz");
+  sff_draw_frequency_label(SFF_FREQ_LABEL_2K, min_freq, max_freq, x0, draw_bins, y_base, "2 kHz");
+  sff_draw_frequency_label(SFF_FREQ_LABEL_5K, min_freq, max_freq, x0, draw_bins, y_base, "5 kHz");
+  sff_draw_frequency_label(SFF_FREQ_LABEL_10K, min_freq, max_freq, x0, draw_bins, y_base, "10 kHz");
+);

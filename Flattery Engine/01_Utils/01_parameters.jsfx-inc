@@ -1,0 +1,75 @@
+// Flattery Engine - Parameter Interface
+// This module defines the parameter structure that all engine functions use
+// instead of reading sliders directly.
+
+@init
+
+// Parameter structure indices (using array-based structure)
+// All parameters are stored in a single array for efficient passing
+SFF_PARAM_FFT_SIZE_SEL = 0;
+SFF_PARAM_STRENGTH = 1;
+SFF_PARAM_MAX_BOOST_DB = 2;
+SFF_PARAM_MAX_CUT_DB = 3;
+SFF_PARAM_WET = 4;
+SFF_PARAM_OUTPUT_GAIN_DB = 5;
+SFF_PARAM_MS_MODE = 6;
+SFF_PARAM_STEREO_LINK = 7;
+SFF_PARAM_NEIGHBOR_RADIUS = 8;
+SFF_PARAM_NEIGHBOR_MODE = 9;
+SFF_PARAM_ATTACK_MS = 10;
+SFF_PARAM_RELEASE_MS = 11;
+SFF_PARAM_INPUT_RMS_MS = 12;
+SFF_PARAM_MIN_OPERATE_DB = 13;
+SFF_PARAM_MAX_OPERATE_DB = 14;
+SFF_PARAM_LOW_CUT_HZ = 15;
+SFF_PARAM_HIGH_CUT_HZ = 16;
+SFF_PARAM_TILT = 17;
+SFF_PARAM_TILT_FREQ_HZ = 18;
+SFF_PARAM_COUNT = 19;
+
+// Helper functions to access parameters from parameter array
+function sff_param_get_fft_size_sel(params) ( params[SFF_PARAM_FFT_SIZE_SEL]; );
+function sff_param_get_strength(params) ( params[SFF_PARAM_STRENGTH]; );
+function sff_param_get_max_boost_db(params) ( params[SFF_PARAM_MAX_BOOST_DB]; );
+function sff_param_get_max_cut_db(params) ( params[SFF_PARAM_MAX_CUT_DB]; );
+function sff_param_get_wet(params) ( params[SFF_PARAM_WET]; );
+function sff_param_get_output_gain_db(params) ( params[SFF_PARAM_OUTPUT_GAIN_DB]; );
+function sff_param_get_ms_mode(params) ( params[SFF_PARAM_MS_MODE]; );
+function sff_param_get_stereo_link(params) ( params[SFF_PARAM_STEREO_LINK]; );
+function sff_param_get_neighbor_radius(params) ( params[SFF_PARAM_NEIGHBOR_RADIUS]; );
+function sff_param_get_neighbor_mode(params) ( params[SFF_PARAM_NEIGHBOR_MODE]; );
+function sff_param_get_attack_ms(params) ( params[SFF_PARAM_ATTACK_MS]; );
+function sff_param_get_release_ms(params) ( params[SFF_PARAM_RELEASE_MS]; );
+function sff_param_get_input_rms_ms(params) ( params[SFF_PARAM_INPUT_RMS_MS]; );
+function sff_param_get_min_operate_db(params) ( params[SFF_PARAM_MIN_OPERATE_DB]; );
+function sff_param_get_max_operate_db(params) ( params[SFF_PARAM_MAX_OPERATE_DB]; );
+function sff_param_get_low_cut_hz(params) ( params[SFF_PARAM_LOW_CUT_HZ]; );
+function sff_param_get_high_cut_hz(params) ( params[SFF_PARAM_HIGH_CUT_HZ]; );
+function sff_param_get_tilt(params) ( params[SFF_PARAM_TILT]; );
+function sff_param_get_tilt_freq_hz(params) ( params[SFF_PARAM_TILT_FREQ_HZ]; );
+
+// Initialize parameter array from slider values (called by UI)
+// This function creates a parameter array from current slider values
+// All sliders use 'flattery_' prefix to avoid conflicts in other codebases
+function sff_params_from_sliders(params_base) (
+  params_base[SFF_PARAM_FFT_SIZE_SEL] = flattery_fft_size_sel;
+  params_base[SFF_PARAM_STRENGTH] = flattery_strength;
+  params_base[SFF_PARAM_MAX_BOOST_DB] = flattery_max_boost_db;
+  params_base[SFF_PARAM_MAX_CUT_DB] = flattery_max_cut_db;
+  params_base[SFF_PARAM_WET] = flattery_wet;
+  params_base[SFF_PARAM_OUTPUT_GAIN_DB] = flattery_output_gain_db;
+  params_base[SFF_PARAM_MS_MODE] = flattery_ms_mode;
+  params_base[SFF_PARAM_STEREO_LINK] = flattery_stereo_link;
+  params_base[SFF_PARAM_NEIGHBOR_RADIUS] = flattery_neighbor_radius;
+  params_base[SFF_PARAM_NEIGHBOR_MODE] = flattery_neighbor_mode;
+  params_base[SFF_PARAM_ATTACK_MS] = flattery_attack_ms;
+  params_base[SFF_PARAM_RELEASE_MS] = flattery_release_ms;
+  params_base[SFF_PARAM_INPUT_RMS_MS] = flattery_input_rms_ms;
+  params_base[SFF_PARAM_MIN_OPERATE_DB] = flattery_min_operate_db;
+  params_base[SFF_PARAM_MAX_OPERATE_DB] = flattery_max_operate_db;
+  params_base[SFF_PARAM_LOW_CUT_HZ] = flattery_low_cut_hz;
+  params_base[SFF_PARAM_HIGH_CUT_HZ] = flattery_high_cut_hz;
+  params_base[SFF_PARAM_TILT] = flattery_tilt;
+  params_base[SFF_PARAM_TILT_FREQ_HZ] = flattery_tilt_freq_hz;
+);
+

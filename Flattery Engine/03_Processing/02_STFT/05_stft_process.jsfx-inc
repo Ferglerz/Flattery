@@ -1,0 +1,43 @@
+// Surround FFT Flattener - STFT processing (analysis/synthesis)
+// Main orchestration file - helper functions moved to focused modules
+
+@init
+
+// Main STFT processing function - orchestrates all stages
+function sff_process_stereo_frame() local(do_recompute) (
+  // Stage 1: Build spectrum from ring buffer
+  sff_build_spectrum_from_ring();
+  
+  // Stage 2: Perform FFT analysis
+  sff_analyze_spectrum();
+  
+  // Stage 3: Compute magnitude caches
+  sff_compute_magnitude_caches();
+  
+  // Stage 4: Apply RMS smoothing if enabled
+  sff_apply_magnitude_smoothing();
+  
+  // Stage 5: Compute gain deltas (or update UI magnitudes if skipping)
+  do_recompute = 1;
+  // Force delta refresh on relevant parameter changes
+  sff_force_recompute_deltas ? (
+    do_recompute = 1;
+    sff_force_recompute_deltas = 0;
+  ) : 0;
+  
+  do_recompute ? (
+    sff_compute_gain_deltas();
+  ) : (
+    sff_update_ui_magnitudes();
+  );
+  
+  // Stage 6: Apply gains to spectra
+  sff_apply_gains_to_spectra();
+  
+  // Stage 7: Synthesize spectra (IFFT)
+  sff_synthesize_spectra();
+  
+  // Stage 8: Overlap-add to output buffers
+  sff_overlap_add_spectra();
+);
+

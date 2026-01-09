@@ -1,0 +1,109 @@
+// Surround FFT Flattener - STFT Spectrum Building
+
+@init
+
+// Fill spectrum from ring buffer (helper function)
+function sff_fill_spec_from_ring(spec_base, in_ring_base) local(n, i, ri, ts) (
+  n = fft_size|0;
+  i = 0;
+  loop(n,
+    // Read backwards from current position to get the N most recent samples
+    // sff_ring_pos points to the next write position, so we read from (pos - n + i)
+    // Add n before modulo to ensure positive index
+    ri = (sff_ring_pos - n + i + n) % n;
+    ts = in_ring_base[ri] * sff_window[i];
+    sff_spec_set_re(spec_base, i, ts);
+    sff_spec_set_im(spec_base, i, 0);
+    i += 1;
+  );
+);
+
+// Build spectrum from ring buffer (LR or MS domain)
+function sff_build_spectrum_from_ring() local(n, i, ri, m, s, w) (
+  n = fft_size|0;
+  ms_mode ? (
+    // Spec L = Mid, Spec R = Side
+    i = 0;
+    loop(n,
+      // Read backwards from current position to get the N most recent samples
+      ri = (sff_ring_pos - n + i + n) % n;
+      m = sff_stereo_avg(sff_in_ring_L[ri], sff_in_ring_R[ri]);
+      s = 0.5 * (sff_in_ring_L[ri] - sff_in_ring_R[ri]);
+      w = sff_window[i];
+      sff_spec_set_re(sff_spec_L, i, m * w);
+      sff_spec_set_im(sff_spec_L, i, 0);
+      sff_spec_set_re(sff_spec_R, i, s * w);
+      sff_spec_set_im(sff_spec_R, i, 0);
+      i += 1;
+    );
+  ) : (
+    sff_fill_spec_from_ring(sff_spec_L, sff_in_ring_L);
+    sff_fill_spec_from_ring(sff_spec_R, sff_in_ring_R);
+  );
+);
+
+// Perform FFT analysis on spectra
+function sff_analyze_spectrum() local(n) (
+  n = fft_size|0;
+  fft(sff_spec_L, n);
+  fft(sff_spec_R, n);
+  // Put FFT output into natural bin order for processing
+  fft_permute(sff_spec_L, n);
+  fft_permute(sff_spec_R, n);
+);
+
+// Compute magnitude cache from spectrum (helper function)
+function sff_compute_mag_cache_from_spec(mag_cache_base, spec_base) local(k, re, im, mag) (
+  k = 0;
+  loop(pos_bin_count,
+    re = sff_spec_re(spec_base, k);
+    im = sff_spec_im(spec_base, k);
+    // Simple FFT magnitude: just the raw magnitude with standard normalization
+    mag = sqrt(re*re + im*im) * fft_mag_norm;
+    mag_cache_base[k] = mag;
+    k += 1;
+  );
+);
+
+// Compute magnitude caches from spectra
+function sff_compute_magnitude_caches() (
+  sff_compute_mag_cache_from_spec(sff_mag_cache_L, sff_spec_L);
+  sff_compute_mag_cache_from_spec(sff_mag_cache_R, sff_spec_R);
+  magL_base = sff_mag_cache_L;
+  magR_base = sff_mag_cache_R;
+);
+
+// Apply RMS smoothing to magnitude bases (helper function)
+function sff_apply_rms_smoothing(magL_base, magR_base) local(k, invc, vL, vR, pL, pR) (
+  invc = sff_rms_inv;
+
+  k = 0;
+  loop(pos_bin_count,
+    vL = magL_base[k];
+    vR = magR_base[k];
+
+    pL = sff_mag_rms_state_L[k];
+    pR = sff_mag_rms_state_R[k];
+
+    pL += ((vL*vL) - pL) * invc;
+    pR += ((vR*vR) - pR) * invc;
+
+    sff_mag_rms_state_L[k] = pL;
+    sff_mag_rms_state_R[k] = pR;
+
+    sff_mag_rms_out_L[k] = sqrt(max(pL, 0));
+    sff_mag_rms_out_R[k] = sqrt(max(pR, 0));
+
+    k += 1;
+  );
+);
+
+// Apply RMS smoothing if enabled
+function sff_apply_magnitude_smoothing() (
+  sff_rms_enabled ? (
+    sff_apply_rms_smoothing(magL_base, magR_base);
+    magL_base = sff_mag_rms_out_L;
+    magR_base = sff_mag_rms_out_R;
+  ) : 0;
+);
+

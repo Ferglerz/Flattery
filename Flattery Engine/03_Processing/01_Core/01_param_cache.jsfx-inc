@@ -1,0 +1,46 @@
+// Surround FFT Flattener - Parameter caching helpers (DRY + fast)
+
+@init
+
+function sff_init_param_trackers() (
+  // Delta-affecting trackers
+  // neighbor_radius is hardcoded to 1, so we don't track it
+  sff_prev_neighbor_mode = neighbor_mode;
+  sff_prev_low_cut_hz = low_cut_hz;
+  sff_prev_high_cut_hz = high_cut_hz;
+
+  // Force at least one recompute after load
+  sff_force_recompute_deltas = 1;
+);
+
+// Cache global operate range in linear for fast gating
+function sff_update_operate_range_cache() (
+  sff_operate_min_lin = sff_db_to_linear(min_operate_db);
+  sff_operate_max_lin = sff_db_to_linear(max_operate_db);
+);
+
+function sff_update_cutoff_bins() local(nyq) (
+  // Use the cached cut values (already clamped in sff_update_cached_cut_range)
+  // Don't modify low_cut_hz/high_cut_hz here - they should match slider values
+  // The cached values are what we use for processing
+  low_cut_bin = sff_hz_to_bin(sff_low_cut_hz_cached);
+  high_cut_bin = sff_hz_to_bin(sff_high_cut_hz_cached);
+
+  low_cut_bin = sff_clamp(low_cut_bin, 0, (pos_bin_count-1));
+  high_cut_bin = sff_clamp(high_cut_bin, 0, (pos_bin_count-1));
+  high_cut_bin < low_cut_bin ? (high_cut_bin = low_cut_bin;) : 0;
+);
+
+function sff_update_delta_recompute_flag() (
+  // If parameters affecting delta calc changed, force a delta recompute next hop
+  // neighbor_radius is hardcoded to 1, so we don't check it
+  (neighbor_mode != sff_prev_neighbor_mode ||
+   low_cut_hz != sff_prev_low_cut_hz ||
+   high_cut_hz != sff_prev_high_cut_hz) ? (
+    sff_force_recompute_deltas = 1;
+    sff_prev_neighbor_mode = neighbor_mode;
+    sff_prev_low_cut_hz = low_cut_hz;
+    sff_prev_high_cut_hz = high_cut_hz;
+  ) : 0;
+);
+

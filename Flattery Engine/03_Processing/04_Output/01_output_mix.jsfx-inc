@@ -1,0 +1,8 @@
+// Surround FFT Flattener - Output mixing helpers
+
+@init
+
+function sff_mix_dry_wet(dry, wet, mix) (
+  dry + (wet - dry) * mix;
+);
+

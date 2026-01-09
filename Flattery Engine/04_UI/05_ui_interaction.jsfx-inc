@@ -1,0 +1,44 @@
+// Surround FFT Flattener - UI Interaction Handling
+
+@init
+sff_dragging_cut = 0; // 0=none, 1=low_cut, 2=high_cut
+sff_dragging_tilt = 0; // 0=none, 1=dragging tilt control
+sff_tilt_control_hover = 0; // 0=not hovering, 1=hovering over tilt control
+sff_tilt_drag_start_y = 0; // Initial mouse Y position when tilt drag starts
+sff_tilt_drag_start_amount = 0; // Initial tilt amount when drag starts
+sff_ui_slider_changed = 0; // Flag to indicate UI changed a slider (checked in main @gfx)
+
+function sff_handle_cut_line_interaction(low_cut_x, high_cut_x, triangle_top_y, h, x0, draw_bins, draw_bins_inv, min_freq, max_freq) local(
+  mouse_over_low, mouse_over_high, hit_dist, new_freq, new_pos
+) (
+  hit_dist = SFF_HIT_DISTANCE;  // Doubled hit distance
+  mouse_over_low  = abs(mouse_x - low_cut_x)  < hit_dist && mouse_y >= triangle_top_y && mouse_y <= triangle_top_y + SFF_TRIANGLE_SIZE + (h - 4);
+  mouse_over_high = abs(mouse_x - high_cut_x) < hit_dist && mouse_y >= triangle_top_y && mouse_y <= triangle_top_y + SFF_TRIANGLE_SIZE + (h - 4);
+
+  // Start/stop dragging
+  (mouse_cap & 1) && !sff_dragging_cut ? ( sff_dragging_cut = mouse_over_low ? 1 : mouse_over_high ? 2 : 0; );
+  !(mouse_cap & 1) ? ( sff_dragging_cut = 0; ) : 0;
+
+  // Handle dragging
+  sff_dragging_cut ? (
+    new_pos = sff_clamp((mouse_x - (x0 + SFF_UI_INNER_MARGIN)) * draw_bins_inv, 0, 1);
+    new_freq = sff_clamp(sff_pos_to_freq(new_pos, min_freq, max_freq), min_freq, max_freq);
+    
+    // Snap to nearest bin center
+    new_freq = sff_snap_freq_to_bin_center(new_freq);
+
+    sff_dragging_cut == 1 ? (
+      new_freq > high_cut_hz ? (new_freq = high_cut_hz;) : 0;
+      low_cut_hz = new_freq;
+      flattery_low_cut_hz = new_freq;  // Update slider variable
+      sliderchange(1 << 15);  // slider16 = bit 15
+      sff_ui_slider_changed = 1;  // Flag for main @gfx to update engine
+    ) : (
+      new_freq < low_cut_hz ? (new_freq = low_cut_hz;) : 0;
+      high_cut_hz = new_freq;
+      flattery_high_cut_hz = new_freq;  // Update slider variable
+      sliderchange(1 << 16);  // slider17 = bit 16
+      sff_ui_slider_changed = 1;  // Flag for main @gfx to update engine
+    );
+  );
+);

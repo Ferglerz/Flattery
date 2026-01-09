@@ -1,0 +1,44 @@
+// Surround FFT Flattener - STFT Delta Computation
+
+@init
+
+// Display helper functions
+function sff_display_write_mag_db(bin, mag_lin) (
+  (bin < sff_display_bin_count) ? (
+    sff_display_mag_db[bin] = sff_safe_linear_to_db(mag_lin);
+  ) : 0;
+);
+
+function sff_display_write_gain_db(bin, gain_db, is_right) (
+  (bin < sff_display_bin_count) ? (
+    is_right ? (
+      sff_display_gain_db[bin] = sff_stereo_avg(sff_display_gain_db[bin], gain_db);
+    ) : (
+      sff_display_gain_db[bin] = gain_db;
+    );
+  ) : 0;
+);
+
+// Compute gain deltas for all bins
+function sff_compute_gain_deltas() local(k, radius) (
+  radius = 1;  // Hardcoded to 1 (Radius slider removed)
+  
+  k = 0;
+  loop(pos_bin_count,
+    sff_delta_db_L[k] = sff_compute_delta_db_for_bin(magL_base, k, radius);
+    sff_delta_db_R[k] = sff_compute_delta_db_for_bin(magR_base, k, radius);
+    sff_delta_db_link[k] = sff_compute_delta_db_for_bin_link(magL_base, magR_base, k, radius);
+    sff_display_write_mag_db(k, sff_stereo_avg(magL_base[k], magR_base[k]));
+    k += 1;
+  );
+);
+
+// Update UI magnitudes only (cheap operation)
+function sff_update_ui_magnitudes() local(k) (
+  k = 0;
+  loop(sff_display_bin_count,
+    sff_display_write_mag_db(k, sff_stereo_avg(magL_base[k], magR_base[k]));
+    k += 1;
+  );
+);
+

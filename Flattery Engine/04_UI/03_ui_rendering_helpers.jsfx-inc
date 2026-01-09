@@ -1,0 +1,51 @@
+// UI Rendering Helpers (Simplified)
+@init 
+
+// Draw downward triangle
+function sff_draw_triangle(x, y, size, r,g,b) local(i,v,w)(
+  i=0;
+  loop(size+1,
+    v = i/size; w = size*(1-v);
+    gfx_set(r,g,b,1);
+    gfx_line(x-w, y+i, x+w, y+i, 0);
+    i+=1;
+  );
+);
+
+// Draw vertical line (3 pixels wide) and optional triangle on top
+function sff_draw_cut_line(x, y_top, y_bottom, tri_size, r,g,b) local(line_width, half_width)(
+  line_width = SFF_CUT_LINE_WIDTH;
+  half_width = line_width * 0.5;
+  // Draw 3-pixel wide line as a filled rectangle (shifted 1 pixel right to center with triangle)
+  gfx_set(r,g,b,1);
+  gfx_rect(x - half_width + 1, y_top, line_width, y_bottom - y_top);
+  tri_size>0 ? sff_draw_triangle(x, y_top, tri_size, r,g,b):0;
+);
+
+// Draw a single dB label (unit removed for cleaner axis)
+function sff_draw_db_label(db, x, y_base, h, inv_scale, plus) local(y)(
+  y = y_base - (db+12)*inv_scale*(h-8);
+  plus && db>0 ? sprintf(#sff_tmp_str,"+%.0f",db)
+               : sprintf(#sff_tmp_str,"%.0f",db);
+  gfx_set(SFF_COLOR_TEXT_R,SFF_COLOR_TEXT_G,SFF_COLOR_TEXT_B,1);
+  gfx_x=x; gfx_y=y-SFF_LABEL_OFFSET_Y;
+  gfx_drawstr(#sff_tmp_str);
+);
+
+// Draw many dB labels
+function sff_draw_db_labels(start_db, end_db, step, x, y_base, h, inv_scale, plus) local(db)(
+  db=start_db;
+  loop((end_db-start_db)/step+1,
+    sff_draw_db_label(db, x, y_base, h, inv_scale, plus); db+=step;
+  );
+);
+
+// Draw a frequency label
+function sff_draw_frequency_label(f, min_f, max_f, x0, bins, y, txt) local(p, lx)(
+  p = sff_freq_to_pos(f,min_f,max_f);
+  lx = sff_pos_to_x(p, x0, bins);
+  sprintf(#sff_tmp_str, txt);
+  gfx_set(SFF_COLOR_TEXT_R,SFF_COLOR_TEXT_G,SFF_COLOR_TEXT_B,1);
+  gfx_x=lx; gfx_y=y-SFF_LABEL_OFFSET_Y;
+  gfx_drawstr(#sff_tmp_str);
+);

@@ -1,0 +1,66 @@
+// Surround FFT Flattener - STFT Synthesis and Overlap-Add
+
+@init
+
+// Overlap-add from spectrum to output ring buffer (helper function)
+function sff_overlap_add_from_spec(out_ring_base, spec_base) local(n, outn, out_write_base, i, sample, win_val) (
+  n = fft_size|0;
+  outn = out_buf_size|0;
+  out_write_base = (sff_out_read_pos + sff_latency) % outn;
+
+  // Overlap-add with synthesis window (same as analysis window for perfect reconstruction)
+  // For Hann window with 50% overlap: w[n] + w[n+N/2] = 1
+  // This higher overlap significantly reduces phase smearing compared to 50% overlap
+  i = 0;
+  loop(n,
+    sample = sff_spec_re(spec_base, i) * ifft_scale;
+    win_val = sff_window[i];
+    // Apply synthesis window and add to output buffer (overlap-add)
+    out_ring_base[(out_write_base + i) % outn] += sample * win_val;
+    i += 1;
+  );
+);
+
+// Perform IFFT synthesis on spectra
+function sff_synthesize_spectra() local(n) (
+  n = fft_size|0;
+  // Return from natural order back to FFT internal order, then IFFT
+  fft_ipermute(sff_spec_L, n);
+  fft_ipermute(sff_spec_R, n);
+  ifft(sff_spec_L, n);
+  ifft(sff_spec_R, n);
+);
+
+// Overlap-add synthesized spectra to output buffers (LR mode)
+function sff_overlap_add_lr() (
+  sff_overlap_add_from_spec(sff_out_ring_L, sff_spec_L);
+  sff_overlap_add_from_spec(sff_out_ring_R, sff_spec_R);
+);
+
+// Overlap-add synthesized spectra to output buffers (MS mode)
+function sff_overlap_add_ms() local(n, outn, out_write_base, i, m, s, win_val) (
+  n = fft_size|0;
+  outn = out_buf_size|0;
+  out_write_base = (sff_out_read_pos + sff_latency) % outn;
+  i = 0;
+  loop(n,
+    m = sff_spec_re(sff_spec_L, i) * ifft_scale;
+    s = sff_spec_re(sff_spec_R, i) * ifft_scale;
+    win_val = sff_window[i];
+    // Apply synthesis window and overlap-add
+    // Spec L = Mid, Spec R = Side -> convert to L/R during output
+    sff_out_ring_L[(out_write_base + i) % outn] += (m + s) * win_val;
+    sff_out_ring_R[(out_write_base + i) % outn] += (m - s) * win_val;
+    i += 1;
+  );
+);
+
+// Overlap-add synthesized spectra (handles both LR and MS modes)
+function sff_overlap_add_spectra() (
+  ms_mode ? (
+    sff_overlap_add_ms();
+  ) : (
+    sff_overlap_add_lr();
+  );
+);
+

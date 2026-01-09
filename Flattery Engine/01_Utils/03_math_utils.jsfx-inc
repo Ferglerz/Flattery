@@ -1,0 +1,92 @@
+// Surround FFT Flattener - Math utils
+
+@init
+
+function sff_clamp(x, a, b) ( min(max(x, a), b); );
+
+function sff_db_to_linear(db) ( exp(db * 0.11512925464970229); );
+function sff_linear_to_db(x)   ( log(max(x, eps)) * 8.6858896380650366; );
+
+// Complex spec helpers
+function sff_spec_re(spec, k)    ( spec[k*2]; );
+function sff_spec_im(spec, k)    ( spec[k*2+1]; );
+function sff_spec_set_re(spec, k, v) ( spec[k*2]   = v; );
+function sff_spec_set_im(spec, k, v) ( spec[k*2+1] = v; );
+
+// Stereo average
+function sff_stereo_avg(L, R) ( SFF_STEREO_AVG_FACTOR * (L + R); );
+
+// Clamp gain by boost/cut limit
+function sff_clamp_gain(db, max_boost, max_cut) (
+  db > 0 ? sff_clamp(db, 0, max_boost) : sff_clamp(db, -max_cut, 0);
+);
+
+// Bin index/frequency conversion
+function sff_bin_to_hz(bin)  ( bin * bin_hz; );
+function sff_hz_to_bin(hz)   ( floor(hz / (bin_hz + eps)); );
+
+// Snap frequency to nearest bin center
+function sff_snap_freq_to_bin_center(freq) local(bin_idx, bin_center, next_bin_center, prev_bin_center, dist_to_center, dist_to_next, dist_to_prev) (
+  bin_hz > 0 ? (
+    // Calculate which bin this frequency falls into
+    bin_idx = floor(freq / (bin_hz + eps));
+    
+    // Calculate bin center for this bin
+    bin_center = (bin_idx + 0.5) * bin_hz;
+    
+    // Calculate bin centers for adjacent bins
+    next_bin_center = (bin_idx + 1.5) * bin_hz;
+    prev_bin_center = bin_idx > 0 ? ((bin_idx - 0.5) * bin_hz) : bin_center;
+    
+    // Calculate distances to all three bin centers
+    dist_to_center = abs(freq - bin_center);
+    dist_to_next = abs(freq - next_bin_center);
+    dist_to_prev = abs(freq - prev_bin_center);
+    
+    // Return the closest bin center
+    dist_to_prev < dist_to_center && dist_to_prev < dist_to_next ? prev_bin_center :
+    dist_to_next < dist_to_center ? next_bin_center : bin_center;
+  ) : (
+    freq;  // If bin_hz is 0 or invalid, return original frequency
+  );
+);
+
+// ms to sec
+function sff_ms_to_sec(ms) ( ms * SFF_MS_TO_SEC; );
+
+// Clamp bin index
+function sff_clamp_bin_index(idx, n) ( sff_clamp(idx, 0, n-1); );
+
+// Linear-to-dB safe
+function sff_safe_linear_to_db(v) ( sff_linear_to_db(max(v, eps)); );
+
+// Frequency mapping blend amount
+sff_freq_map_log_amount = 0.85;
+
+// Norm. pos <-> freq mapping (blended linear/log)
+function sff_pos_to_freq(pos, fmin, fmax) (
+  (fmin + (fmax - fmin)*pos) * (1 - sff_freq_map_log_amount)
+  + exp(log(max(fmin, 1)) + (log(max(fmax, fmin+1)) - log(max(fmin, 1)))*pos) * sff_freq_map_log_amount;
+);
+
+function sff_freq_to_pos(freq, fmin, fmax)
+local(lnmin, lnmax, lnrng, rng, pos, err, best, best_err, d, testf, i) (
+  lnmin=log(max(fmin,1));
+  lnmax=log(max(fmax,fmin+1));
+  lnrng = lnmax-lnmin;
+  rng = fmax-fmin;
+  pos = (log(max(freq,1)) - lnmin) / (lnrng+eps);
+  pos = sff_clamp(pos,0,1);
+  best=pos; best_err=abs(freq - sff_pos_to_freq(pos,fmin,fmax));
+  loop(8,
+    testf=(fmin+rng*pos)*(1-sff_freq_map_log_amount)
+         +exp(lnmin+lnrng*pos)*sff_freq_map_log_amount;
+    err=abs(freq-testf);
+    err < best_err ? (best=pos; best_err=err;);
+    d=rng*(1-sff_freq_map_log_amount)
+     + lnrng*exp(lnmin+lnrng*pos)*sff_freq_map_log_amount;
+    pos=sff_clamp(pos+(freq-testf)/(d+eps),0,1);
+  );
+  best;
+);
+

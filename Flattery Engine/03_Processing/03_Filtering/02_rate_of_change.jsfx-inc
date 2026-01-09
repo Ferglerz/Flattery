@@ -1,0 +1,36 @@
+// Surround FFT Flattener - Rate of Change Scaling
+
+@init
+
+// Helper: Apply rate of change scaling to filter gain
+// Reduces action at low deltas (small rate of change)
+function sff_apply_rate_of_change_scaling(target_gain_linear, prev_gain_linear) local(
+  target_gain_db, prev_gain_db, delta_db, delta_abs, scale_factor, scaled_delta_db, scaled_gain_db, scaled_gain_linear
+) (
+  // Calculate rate of change in dB
+  target_gain_db = sff_linear_to_db(target_gain_linear);
+  prev_gain_db = sff_linear_to_db(prev_gain_linear);
+  delta_db = target_gain_db - prev_gain_db;
+  delta_abs = abs(delta_db);
+  
+  // Scale factor: reduce action at low deltas
+  // Small deltas get scaled down more, large deltas pass through
+  // Using a smooth curve: scale = 1 - exp(-delta_abs / threshold)
+  // Threshold of 1.0 dB means deltas < 1 dB are significantly reduced
+  delta_abs > 0.001 ? (
+    // Scale factor: 1.0 for large deltas, approaching 0 for small deltas
+    // Using threshold from constants - adjust this value to control sensitivity
+    scale_factor = 1.0 - exp(-delta_abs / SFF_RATE_OF_CHANGE_THRESHOLD_DB);
+    // Apply scaling to the delta
+    scaled_delta_db = delta_db * scale_factor;
+    // Calculate scaled gain
+    scaled_gain_db = prev_gain_db + scaled_delta_db;
+    scaled_gain_linear = sff_db_to_linear(scaled_gain_db);
+  ) : (
+    // No change or very small change - keep previous gain
+    scaled_gain_linear = prev_gain_linear;
+  );
+  
+  scaled_gain_linear;
+);
+

@@ -1,0 +1,101 @@
+desc:Flattery (WIP)
+// Frequency-domain "leveling" based on adjacent FFT bins.
+// Pre (feedforward) analysis only. Modular includes live under this folder.
+// This version uses the Flattery Engine library
+
+options:gfx_hz=30
+
+// --- User parameters  ---
+// Core
+slider1:flattery_fft_size_sel=2<0,6,1{128,256,512,1024,2048,4096,8192}>FFT Size
+slider2:flattery_strength=35<0,200,1>Strength (%)
+slider3:flattery_max_boost_db=12<0,48,0.1>Max Boost (dB)
+slider4:flattery_max_cut_db=12<0,48,0.1>Max Cut (dB)
+slider5:flattery_wet=100<0,100,1>Wet (%)
+slider6:flattery_output_gain_db=0<-12,12,0.01>Output Gain (dB)
+
+// Processing mode
+slider7:flattery_ms_mode=1<0,1,1{LR,MS}>Process Domain
+slider8:flattery_stereo_link=0<0,100,1>Stereo Link (%)
+slider9:flattery_neighbor_radius=1<1,12,1>-Radius (bins)
+slider10:flattery_neighbor_mode=1<0,1,1{Mean,Median}>Neighbor Mode
+
+// Timing
+slider11:flattery_attack_ms=2<0.1,200,0.1>Attack (ms)
+slider12:flattery_release_ms=30<1,2000,1>Release (ms)
+slider13:flattery_input_rms_ms=0<0,10,0.1>Input RMS (ms)
+
+// Operating range + cut band
+slider14:flattery_min_operate_db=-80<-120,0,0.1>Operate Min (dB)
+slider15:flattery_max_operate_db=0<-120,0,0.1>Operate Max (dB)
+slider16:flattery_low_cut_hz=20<10,20000,1>-Low Cut (Hz)
+slider17:flattery_high_cut_hz=20000<20,20000,1>-High Cut (Hz)
+
+// Tilt filter
+slider18:flattery_tilt=0<-100,100,1>-Tilt (%)
+slider19:flattery_tilt_freq_hz=1800<20,20000,1>-Tilt Frequency (Hz)
+
+// --- Import Flattery Engine Library ---
+// Phase 0: Parameters and Constants
+import ../Flattery Engine/01_Utils/01_parameters.jsfx-inc
+import ../Flattery Engine/01_Utils/02_constants.jsfx-inc
+import ../Flattery Engine/01_Utils/03_math_utils.jsfx-inc
+import ../Flattery Engine/01_Utils/04_param_sync.jsfx-inc
+
+// Phase 1: FFT and Memory
+import ../Flattery Engine/02_FFT/01_fft_memory.jsfx-inc
+import ../Flattery Engine/02_FFT/02_fft_core.jsfx-inc
+import ../Flattery Engine/02_FFT/03_filter_bank.jsfx-inc
+import ../Flattery Engine/02_FFT/04_iir_filters.jsfx-inc
+
+// Phase 2: Processing
+// Core processing
+import ../Flattery Engine/03_Processing/01_Core/01_param_cache.jsfx-inc
+import ../Flattery Engine/03_Processing/01_Core/02_attack_release.jsfx-inc
+import ../Flattery Engine/03_Processing/01_Core/03_surround_logic.jsfx-inc
+// STFT processing
+import ../Flattery Engine/03_Processing/02_STFT/01_stft_spectrum.jsfx-inc
+import ../Flattery Engine/03_Processing/02_STFT/02_stft_deltas.jsfx-inc
+import ../Flattery Engine/03_Processing/02_STFT/03_stft_gains.jsfx-inc
+import ../Flattery Engine/03_Processing/02_STFT/04_stft_synthesis.jsfx-inc
+import ../Flattery Engine/03_Processing/02_STFT/05_stft_process.jsfx-inc
+// Filtering
+import ../Flattery Engine/03_Processing/03_Filtering/01_tilt_calculation.jsfx-inc
+import ../Flattery Engine/03_Processing/03_Filtering/02_rate_of_change.jsfx-inc
+import ../Flattery Engine/03_Processing/03_Filtering/03_filter_mapping.jsfx-inc
+// Output
+import ../Flattery Engine/03_Processing/04_Output/01_output_mix.jsfx-inc
+
+// Phase 3: UI
+import ../Flattery Engine/04_UI/01_ui_constants.jsfx-inc
+import ../Flattery Engine/04_UI/02_ui_coordinates.jsfx-inc
+import ../Flattery Engine/04_UI/03_ui_rendering_helpers.jsfx-inc
+import ../Flattery Engine/04_UI/04_ui_graph_rendering.jsfx-inc
+import ../Flattery Engine/04_UI/05_ui_interaction.jsfx-inc
+import ../Flattery Engine/04_UI/06_ui_orchestration.jsfx-inc
+import ../Flattery Engine/04_UI/07_ui.jsfx-inc
+
+// Phase 4: Engine API (must be last - depends on everything)
+import ../Flattery Engine/00_engine_api.jsfx-inc
+
+@init
+  // Initialize engine from sliders (handles allocation and setup automatically)
+  flattery_init_from_sliders();
+
+@slider
+  // Update engine from sliders (handles parameter sync automatically)
+  flattery_update_from_sliders();
+
+@sample
+  // Process audio through engine
+  flattery_process_sample();
+
+@gfx 900 260
+  // Check if UI changed a slider and update engine immediately
+  sff_ui_slider_changed ? (
+    flattery_update_from_sliders();
+    sff_ui_slider_changed = 0;
+  );
+  // Render UI using engine parameters
+  flattery_render_ui(0);  // 0 = use current engine parameters
+

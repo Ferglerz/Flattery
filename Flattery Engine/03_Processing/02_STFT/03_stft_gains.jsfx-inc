@@ -1,0 +1,83 @@
+// Surround FFT Flattener - STFT Gain Application
+
+@init
+
+// Helper: Apply gain to spec bin (positive and negative frequencies)
+// For real signals: DC (k=0) and Nyquist (k=N/2) are real-only, others have negative mirror
+function sff_apply_gain_to_spec_bin(spec_base, k, g_lin, n) local(kn) (
+  sff_spec_set_re(spec_base, k, sff_spec_re(spec_base, k) * g_lin);
+  sff_spec_set_im(spec_base, k, sff_spec_im(spec_base, k) * g_lin);
+  // Mirror to negative frequency bin (for k > 0 and k < N/2)
+  // DC (k=0) and Nyquist (k=N/2) don't have negative frequency mirrors
+  (k > 0 && k < pos_bin_count) ? (
+    kn = (n - k)|0;
+    sff_spec_set_re(spec_base, kn, sff_spec_re(spec_base, kn) * g_lin);
+    sff_spec_set_im(spec_base, kn, sff_spec_im(spec_base, kn) * g_lin);
+  ) : 0;
+);
+
+// Helper: Compute effective strength for a bin (no band scaling)
+function sff_compute_effective_strength(bin) (
+  strength_internal;
+);
+
+// Apply gains to a single spectrum
+function sff_apply_gains_to_spec(spec_base, gain_db_base, delta_db_base, mag_base, is_right) local(n, k, target_gain_db, smooth_gain_db, g_lin, link, ind_delta, link_delta, delta, str_eff, active) (
+  n = fft_size|0;
+  link = stereo_link * 0.01;
+
+  k = 0;
+  loop(pos_bin_count,
+    active = sff_bin_is_active(k, mag_base[k]);
+    str_eff = sff_compute_effective_strength(k);
+
+    ind_delta = delta_db_base[k];
+    link_delta = sff_delta_db_link[k];
+    delta = ind_delta * (1 - link) + link_delta * link;
+
+    target_gain_db = active ? sff_clamp_gain(delta * str_eff, max_boost_db, max_cut_db) : 0;
+    smooth_gain_db = sff_smooth_gain_db(gain_db_base, k, target_gain_db);
+    g_lin = sff_db_to_linear(smooth_gain_db);
+
+    sff_apply_gain_to_spec_bin(spec_base, k, g_lin, n);
+    sff_display_write_gain_db(k, smooth_gain_db, is_right);
+
+    k += 1;
+  );
+);
+
+// Apply linked gains to both spectra (stereo link >= 99.5%)
+function sff_apply_linked_gains_to_specs() local(n, k, mag_avg, str_eff, target_gain_db, smooth_gain_db, g_lin) (
+  n = fft_size|0;
+  memset(sff_display_gain_db, 0, sff_display_bin_count);
+
+  k = 0;
+  loop(pos_bin_count,
+    mag_avg = sff_stereo_avg(magL_base[k], magR_base[k]);
+    str_eff = sff_compute_effective_strength(k);
+
+    target_gain_db = sff_bin_is_active(k, mag_avg) ? (
+      sff_clamp_gain(sff_delta_db_link[k] * str_eff, max_boost_db, max_cut_db)
+    ) : 0;
+    smooth_gain_db = sff_smooth_gain_db(sff_gain_db_link, k, target_gain_db);
+    g_lin = sff_db_to_linear(smooth_gain_db);
+
+    sff_apply_gain_to_spec_bin(sff_spec_L, k, g_lin, n);
+    sff_apply_gain_to_spec_bin(sff_spec_R, k, g_lin, n);
+    sff_display_write_gain_db(k, smooth_gain_db, 0);
+    k += 1;
+  );
+);
+
+// Apply gains to spectra (uses cached deltas + smoothing every hop)
+function sff_apply_gains_to_spectra() (
+  stereo_link >= 99.5 ? (
+    sff_apply_linked_gains_to_specs();
+  ) : (
+    // Clear display gain accumulator each hop (we overwrite then average with R)
+    memset(sff_display_gain_db, 0, sff_display_bin_count);
+    sff_apply_gains_to_spec(sff_spec_L, sff_gain_db_L, sff_delta_db_L, magL_base, 0);
+    sff_apply_gains_to_spec(sff_spec_R, sff_gain_db_R, sff_delta_db_R, magR_base, 1);
+  );
+);
+

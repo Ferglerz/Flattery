@@ -1,0 +1,109 @@
+// Surround FFT Flattener - Map FFT Analysis to Filter Gains
+
+@init
+
+// Reset all filters to unity gain (used when strength is zero)
+function sff_reset_filters_to_unity() local(i) (
+  i = 0;
+  loop(sff_filter_count,
+    sff_filter_gains_prev[i] = sff_filter_gains[i];
+    sff_filter_gains[i] = 1.0;
+    i += 1;
+  );
+  sff_update_filter_coeffs();
+  // Update cached unity flag (all filters are at unity when strength=0)
+  sff_update_unity_cache_flag();
+);
+
+// Map gain for a single filter from FFT analysis
+function sff_map_single_filter_gain(filter_idx) local(
+  bin_idx, gain_db, target_gain_linear, prev_gain_linear, scaled_gain_linear, filter_freq, tilt_mult_scaled
+) (
+  // Find closest FFT bin for this filter
+  bin_idx = sff_filter_to_bin_index(filter_idx);
+  // Clamp to valid range and ensure bin_idx is valid
+  bin_idx = sff_clamp(bin_idx, 0, pos_bin_count - 1);
+  
+  // Get gain from FFT analysis (use stereo-linked or individual)
+  // These are already in dB (0dB = unity, positive = boost, negative = cut)
+  // The FFT has already calculated the target gain for this frequency bin
+  // and clamped it to max_boost_db/max_cut_db. We apply it directly to the filter.
+  stereo_link >= 99.5 ? (
+    gain_db = sff_gain_db_link[bin_idx];
+  ) : (
+    // Average left/right for now (could be improved)
+    gain_db = sff_stereo_avg(sff_gain_db_L[bin_idx], sff_gain_db_R[bin_idx]);
+  );
+  
+  // Get filter frequency for tilt calculation
+  filter_freq = sff_filter_freq[filter_idx];
+  
+  // Apply tilt filter BEFORE clamping to ensure it affects the raw gain value
+  // Tilt modifies the strength of boost/cut by multiplying gain_db by a frequency-dependent multiplier
+  // At 0Hz: 25% strength (multiplier 0.25), at 1.8kHz: 100% (1.0), at Nyquist: 400% (4.0)
+  // Negative tilt_amount inverts the curve (high frequencies reduced, low frequencies boosted)
+  tilt_mult_scaled = sff_calculate_tilt_multiplier_scaled(filter_freq);
+  gain_db = sff_apply_tilt_to_gain(gain_db, tilt_mult_scaled);
+  
+  // Clamp gain after tilt application (if any)
+  // The FFT gain_db is already clamped to max_boost_db/max_cut_db in the FFT processing
+  // We need to re-clamp after tilt since tilt can increase gains beyond limits
+  gain_db = sff_clamp_gain(gain_db, max_boost_db, max_cut_db);
+  
+  // Convert dB gain to linear gain for filter
+  // gain_db = 0 means no change (gain_linear = 1.0)
+  // gain_db > 0 means boost, gain_db < 0 means cut
+  target_gain_linear = sff_db_to_linear(gain_db);
+  
+  // Apply tilt compensation to maintain tonal balance
+  target_gain_linear = sff_apply_tilt_compensation(target_gain_linear, tilt_mult_scaled);
+  
+  // Safety clamp to prevent extreme values (shouldn't be needed if FFT clamping works)
+  // But add as a failsafe: max_boost_db typically 12-48dB, max_cut_db similar
+  // 48dB = ~251x linear, so clamp to reasonable range
+  target_gain_linear = sff_clamp(target_gain_linear, 0.01, 1000.0);
+  
+  // Get previous gain for rate of change calculation
+  prev_gain_linear = sff_filter_gains_prev[filter_idx];
+  
+  // Apply rate of change scaling to reduce action at low deltas
+  scaled_gain_linear = sff_apply_rate_of_change_scaling(target_gain_linear, prev_gain_linear);
+  
+  // Update filter gain with scaled value
+  sff_filter_gains[filter_idx] = scaled_gain_linear;
+  
+  // Store current gain as previous for next update
+  sff_filter_gains_prev[filter_idx] = scaled_gain_linear;
+);
+
+// Map FFT bin gains to filter gains
+// Each filter gets gain from the closest FFT bin(s)
+// FFT gains are in dB relative to unity (0dB = no change)
+function sff_map_fft_gains_to_filters() local(i, filter_freq) (
+  // If strength_internal is zero, set all filters to unity gain and return early
+  strength_internal == 0 ? (
+    sff_reset_filters_to_unity();
+  ) : (
+    i = 0;
+    loop(sff_filter_count,
+      filter_freq = sff_filter_freq[i];
+      // Only map gains for filters within the active cut range
+      // Filters outside the range are set to unity (bypassed)
+      (filter_freq >= sff_low_cut_hz_cached && filter_freq <= sff_high_cut_hz_cached) ? (
+        sff_map_single_filter_gain(i);
+      ) : (
+        // Filter outside active range - set to unity gain
+        sff_filter_gains_prev[i] = sff_filter_gains[i];
+        sff_filter_gains[i] = 1.0;
+      );
+      i += 1;
+    );
+    
+    // Update filter coefficients with new gains
+    sff_update_filter_coeffs();
+    
+    // Update cached unity flag after gains change
+    sff_update_unity_cache_flag();
+  );
+);
+

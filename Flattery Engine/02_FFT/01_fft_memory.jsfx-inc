@@ -1,0 +1,76 @@
+// Surround FFT Flattener - Memory layout (self-contained)
+// IMPORTANT: keep FFT buffer itself within a single 16,384-slot boundary.
+
+@init
+
+function sff_allocate_memory() local(maxn, fft_buf_len, out_len, pos_bins, display_bins, top) (
+  maxn = SFF_MAX_FFT_SIZE;
+  fft_buf_len = 2 * maxn;   // interleaved complex: [re0,im0,re1,im1,...]
+  out_len = 2 * maxn;       // output ring size (supports +N lookahead scheduling)
+  pos_bins = maxn * 0.5;    // N/2 positive-frequency bins
+  display_bins = SFF_MAX_DISPLAY_BINS;
+
+  sff_mem_base = 0;
+  sff_mem_next = sff_mem_base;
+
+  // Put FFT buffers first so they never cross 16,384-slot boundaries.
+  sff_spec_L = sff_mem_next;           sff_mem_next += fft_buf_len;
+  sff_spec_R = sff_mem_next;           sff_mem_next += fft_buf_len;
+
+  sff_window = sff_mem_next;           sff_mem_next += maxn;
+
+  sff_in_ring_L = sff_mem_next;        sff_mem_next += maxn;
+  sff_in_ring_R = sff_mem_next;        sff_mem_next += maxn;
+
+  // Dry path delay buffers (match wet path latency for perfect nulling)
+  sff_dry_delay_L = sff_mem_next;      sff_mem_next += maxn;
+  sff_dry_delay_R = sff_mem_next;      sff_mem_next += maxn;
+  sff_dry_write_pos = 0;
+
+  sff_out_ring_L = sff_mem_next;       sff_mem_next += out_len;
+  sff_out_ring_R = sff_mem_next;       sff_mem_next += out_len;
+
+  // Per-channel gain smoothing state (stored in dB per positive bin)
+  sff_gain_db_L = sff_mem_next;        sff_mem_next += pos_bins;
+  sff_gain_db_R = sff_mem_next;        sff_mem_next += pos_bins;
+  // Stereo-linked gain smoothing state (dB per positive bin)
+  sff_gain_db_link = sff_mem_next;     sff_mem_next += pos_bins;
+
+  // Magnitude caches (linear) per positive bin
+  sff_mag_cache_L = sff_mem_next;      sff_mem_next += pos_bins;
+  sff_mag_cache_R = sff_mem_next;      sff_mem_next += pos_bins;
+
+  // RMS smoothing state (power) and outputs (linear) per positive bin
+  sff_mag_rms_state_L = sff_mem_next;  sff_mem_next += pos_bins;
+  sff_mag_rms_state_R = sff_mem_next;  sff_mem_next += pos_bins;
+  sff_mag_rms_out_L = sff_mem_next;    sff_mem_next += pos_bins;
+  sff_mag_rms_out_R = sff_mem_next;    sff_mem_next += pos_bins;
+
+  // Cached "ideal delta" (dB) per positive bin (unscaled by Strength)
+  sff_delta_db_L = sff_mem_next;       sff_mem_next += pos_bins;
+  sff_delta_db_R = sff_mem_next;       sff_mem_next += pos_bins;
+  sff_delta_db_link = sff_mem_next;    sff_mem_next += pos_bins;
+
+  // UI: store bin magnitudes/gains (dB) for display (up to max FFT bins)
+  sff_display_mag_db = sff_mem_next;   sff_mem_next += display_bins;
+  sff_display_gain_db = sff_mem_next;  sff_mem_next += display_bins;
+
+  // Median scratch buffer (radius-aware window)
+  sff_median_buf = sff_mem_next;       sff_mem_next += SFF_MAX_MEDIAN_WIN;
+
+  // Filter bank memory will be allocated after filter count is calculated
+  // (allocated in sff_init_filter_bank after sff_init_filter_frequencies)
+  sff_filter_freq_base = sff_mem_next;  // Reserve space for filter frequencies
+  // Max filters: ~10 octaves * 24 filters/octave = 240 filters max
+  // But with reduced below 300Hz, expect ~150-180 filters
+  sff_mem_next += 256;  // Reserve space for filter frequencies (over-allocate for safety)
+
+  top = sff_mem_next;
+  freembuf(top);
+
+  // Clear everything
+  memset(sff_mem_base, 0, top);
+  
+  // Note: Filter bank state will be allocated separately after filter count is known
+);
+

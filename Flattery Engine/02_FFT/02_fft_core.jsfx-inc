@@ -1,0 +1,113 @@
+// Surround FFT Flattener - FFT core (windowing + sizing)
+
+@init
+
+function sff_init_window() local(i, n, invn, w, x, halfn, idx2, sum_val, min_sum, max_sum, avg_sum, norm_factor, hop_half_inv) (
+  n = fft_size|0;
+  halfn = (n * 0.5)|0;
+  // Use (n-1) so the window hits 0 at both ends (important for OLA stability).
+  invn = 1.0 / (max(n-1, 1) + eps);
+  
+  // Use Hann window: works well with 50% overlap for analysis
+  // Standard Hann: w[n] = 0.5 * (1 - cos(2πn/(N-1)))
+  i = 0;
+  loop(n,
+    x = 2*$pi*i*invn;
+    w = 0.5 * (1 - cos(x));
+    sff_window[i] = w;
+    i += 1;
+  );
+  
+  // For perfect reconstruction with 50% overlap (2x overlap), we need:
+  // w[n] + w[n+N/2] = constant
+  // Calculate statistics across all overlapping positions
+  min_sum = 999999;
+  max_sum = 0;
+  avg_sum = 0;
+  hop_half = (n * 0.5)|0;
+  hop_half_inv = 1.0 / (hop_half + eps);
+  i = 0;
+  loop(hop_half,
+    idx2 = (i + hop_half) % n;
+    sum_val = sff_window[i] + sff_window[idx2];
+    min_sum = min(min_sum, sum_val);
+    max_sum = max(max_sum, sum_val);
+    avg_sum += sum_val;
+    i += 1;
+  );
+  avg_sum *= hop_half_inv;
+  
+  // Normalize using average sum to minimize phase distortion
+  // This ensures perfect reconstruction with 50% overlap
+  norm_factor = 1.0 / (avg_sum + eps);
+  i = 0;
+  loop(n,
+    sff_window[i] *= norm_factor;
+    i += 1;
+  );
+);
+
+function sff_reset_runtime_state() local(n, outn, pos_bins) (
+  n = fft_size|0;
+  outn = out_buf_size|0;
+  pos_bins = n*0.5;
+
+  sff_ring_pos = 0;
+  sff_hop_counter = 0;
+  sff_out_read_pos = 0;
+
+  memset(sff_in_ring_L, 0, n);
+  memset(sff_in_ring_R, 0, n);
+  memset(sff_dry_delay_L, 0, n);
+  memset(sff_dry_delay_R, 0, n);
+  memset(sff_out_ring_L, 0, outn);
+  memset(sff_out_ring_R, 0, outn);
+  sff_dry_write_pos = 0;
+
+  memset(sff_gain_db_L, 0, pos_bins);
+  memset(sff_gain_db_R, 0, pos_bins);
+  memset(sff_gain_db_link, 0, pos_bins);
+  memset(sff_mag_cache_L, 0, pos_bins);
+  memset(sff_mag_cache_R, 0, pos_bins);
+  memset(sff_mag_rms_state_L, 0, pos_bins);
+  memset(sff_mag_rms_state_R, 0, pos_bins);
+  memset(sff_mag_rms_out_L, 0, pos_bins);
+  memset(sff_mag_rms_out_R, 0, pos_bins);
+  memset(sff_delta_db_L, 0, pos_bins);
+  memset(sff_delta_db_R, 0, pos_bins);
+  memset(sff_delta_db_link, 0, pos_bins);
+  memset(sff_display_mag_db, -120, SFF_MAX_DISPLAY_BINS);
+  memset(sff_display_gain_db, 0, SFF_MAX_DISPLAY_BINS);
+);
+
+function sff_set_fft_size(new_size) local(n, maxn, n_inv, srate_inv) (
+  maxn = SFF_MAX_FFT_SIZE;
+  n = sff_clamp(new_size, 128, maxn) | 0;
+
+  // Derived parameters
+  fft_size = n;
+  hop_size = (n * 0.5)|0;  // 50% overlap
+  out_buf_size = (2*n)|0;
+  pos_bin_count = (n*0.5)|0;
+  // UI draws one bar per positive bin, capped by allocation
+  sff_display_bin_count = min(pos_bin_count, SFF_MAX_DISPLAY_BINS);
+
+  // Delay compensation: FFT analysis window is centered around fft_size/2 samples ago
+  // We delay input audio by this amount so filters process audio matching the analysis timing
+  sff_analysis_delay = (n * 0.5)|0;  // Delay in samples (half the FFT window size)
+
+  // Cache inverses for multiplication optimization
+  n_inv = 1.0 / (n + eps);
+  srate_inv = 1.0 / (srate + eps);
+  
+  ifft_scale = n_inv;
+  // Simple FFT magnitude normalization: 2.0/N for real signals
+  // No window compensation - just show true bin content
+  fft_mag_norm = 2.0 * n_inv;
+  bin_hz = srate * n_inv;
+  frame_dt = hop_size * srate_inv;
+
+  sff_init_window();
+  sff_reset_runtime_state();
+);
+

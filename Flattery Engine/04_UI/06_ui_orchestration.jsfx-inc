@@ -1,0 +1,84 @@
+// Surround FFT Flattener - UI Orchestration (Main Draw Function)
+
+@init
+
+// Shared UI layout and range calculation helper
+function sff_ui_layout(min_freq, max_freq, x0, y0, w, h, avail_w, draw_bins, draw_bins_inv, y_base) (
+  x0 = SFF_UI_MARGIN;
+  y0 = SFF_UI_MARGIN;
+  w = gfx_w - (SFF_UI_MARGIN * 2);
+  h = gfx_h - (SFF_UI_MARGIN * 2);
+  avail_w = max(w - (SFF_UI_INNER_MARGIN * 2), 1);
+  draw_bins = avail_w;
+  draw_bins_inv = 1.0 / max(draw_bins - 1, 1);
+  y_base = y0 + h - (SFF_UI_INNER_MARGIN * 2);
+  min_freq = 10;
+  max_freq = srate * 0.5;
+);
+
+// Common UI drawing core, parametric for cut frequencies
+function sff_ui_draw_core(low_cut, high_cut) local(
+  x0, y0, w, h, avail_w, draw_bins, draw_bins_inv, y_base,
+  min_freq, max_freq, low_cut_pos, high_cut_pos, low_cut_x, high_cut_x,
+  triangle_size, triangle_top_y
+) (
+  // Set clean font for all text rendering
+  gfx_setfont(SFF_FONT_SIZE, "Helvetica");
+  
+  sff_ui_layout(min_freq, max_freq, x0, y0, w, h, avail_w, draw_bins, draw_bins_inv, y_base);
+
+  gfx_set(SFF_COLOR_BG_R, SFF_COLOR_BG_G, SFF_COLOR_BG_B, 1);
+  gfx_rect(0, 0, gfx_w, gfx_h);
+
+  sff_draw_background(x0, y0, w, h, draw_bins, draw_bins_inv, min_freq, max_freq);
+
+  low_cut_pos = sff_freq_to_pos(low_cut, min_freq, max_freq);
+  high_cut_pos = sff_freq_to_pos(high_cut, min_freq, max_freq);
+  low_cut_x = sff_pos_to_x(low_cut_pos, x0, draw_bins);
+  high_cut_x = sff_pos_to_x(high_cut_pos, x0, draw_bins);
+
+  sff_draw_magnitude_curve(x0, y_base, h, draw_bins, min_freq, max_freq, low_cut, high_cut);
+  sff_draw_filter_gain_curve(x0, y_base, h, draw_bins, min_freq, max_freq, low_cut, high_cut);
+  sff_draw_center_line(x0, y_base, h, avail_w);
+  sff_draw_tilt_visualization(x0, y_base, h, draw_bins, draw_bins_inv, min_freq, max_freq);
+
+  triangle_size = SFF_TRIANGLE_SIZE;
+  triangle_top_y = y0 + SFF_UI_INNER_MARGIN;
+
+  sff_draw_cut_lines(low_cut_x, high_cut_x, triangle_top_y, y_base, triangle_size);
+  sff_draw_labels(x0, y_base, h, draw_bins, min_freq, max_freq);
+
+  // Return layout info for interactive variant
+  x0; y0; w; h; avail_w; draw_bins; draw_bins_inv; y_base; min_freq; max_freq;
+  low_cut_x; high_cut_x; triangle_top_y;
+);
+
+// Main UI draw function
+function sff_ui_draw() local(layout) (
+  layout = sff_ui_draw_core(low_cut_hz, high_cut_hz);
+
+  // Unpack needed values for interaction
+  x0 = layout[0];
+  draw_bins = layout[4];
+  draw_bins_inv = layout[5];
+  min_freq = layout[7];
+  max_freq = layout[8];
+  low_cut_x = layout[9];
+  high_cut_x = layout[10];
+  triangle_top_y = layout[11];
+  h = layout[3];
+
+  // Handle mouse interaction and redraw cut lines if needed
+  sff_handle_cut_line_interaction(low_cut_x, high_cut_x, triangle_top_y, h, x0, draw_bins, draw_bins_inv, min_freq, max_freq);
+
+  // After possible parameter update, redraw cut lines for accuracy
+  // Recalculate with updated cut freq
+  layout = sff_ui_draw_core(low_cut_hz, high_cut_hz);
+);
+
+// Parameterized UI draw function (for preview, automation etc)
+function sff_ui_draw_with_params(params_base) (
+  low = sff_param_get_low_cut_hz(params_base);
+  high = sff_param_get_high_cut_hz(params_base);
+  sff_ui_draw_core(low, high);
+);

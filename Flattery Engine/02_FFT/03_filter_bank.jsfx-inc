@@ -1,0 +1,95 @@
+// Surround FFT Flattener - IIR Filter Bank
+// Uses FFT for analysis, IIR filters for processing (avoids phase issues)
+
+@init
+
+// Filter bank constants
+SFF_FILTER_MIN_HZ = 20;      // Minimum filter frequency
+SFF_FILTER_MAX_HZ = 18000;   // Maximum filter frequency (cap to save CPU)
+SFF_FILTERS_PER_OCTAVE = 24; // Maximum filters per octave (quarter-tone resolution)
+
+// Calculate minimum frequency spacing to maintain max filters per octave
+// At frequency f, minimum spacing = f * (2^(1/24) - 1) to maintain 24 per octave
+function sff_min_filter_spacing(freq) local(ratio) (
+  ratio = pow(2, 1.0 / SFF_FILTERS_PER_OCTAVE);  // 2^(1/24)
+  freq * (ratio - 1);  // Minimum spacing at this frequency
+);
+
+// Calculate number of filters needed (one per bin, respecting 24 per octave limit)
+function sff_calculate_filter_count() (
+  // Filter count will be determined during initialization based on bins
+  // This function is kept for compatibility but count is set in sff_init_filter_frequencies
+  sff_filter_count = 0;
+);
+
+// Calculate filter center frequencies - one per bin, respecting 24 per octave limit
+function sff_init_filter_frequencies() local(i, bin_idx, bin_freq, last_filter_freq, min_spacing, filter_idx) (
+  // Set filter frequency array base
+  sff_filter_freq = sff_filter_freq_base;
+  
+  filter_idx = 0;
+  last_filter_freq = 0;  // Track last filter frequency to enforce spacing
+  
+  // Iterate through all bins, creating one filter per bin when spacing allows
+  i = 0;
+  loop(pos_bin_count,
+    bin_idx = i;
+    // Calculate bin CENTER frequency (not left edge)
+    // Bin k covers frequencies from k*bin_hz to (k+1)*bin_hz
+    // Center is at (k + 0.5) * bin_hz
+    bin_freq = (bin_idx + 0.5) * bin_hz;
+    
+    // Only create filters within valid frequency range
+    (bin_freq >= SFF_FILTER_MIN_HZ && bin_freq <= SFF_FILTER_MAX_HZ) ? (
+      // Check if we can add a filter at this bin's center frequency
+      // (first filter always allowed, or if spacing is sufficient)
+      filter_idx == 0 || (bin_freq - last_filter_freq) >= sff_min_filter_spacing(last_filter_freq) ? (
+        // Add filter at this bin's center frequency
+        sff_filter_freq[filter_idx] = bin_freq;
+        last_filter_freq = bin_freq;
+        filter_idx += 1;
+      ) : 0;
+    ) : 0;
+    i += 1;
+  );
+  
+  // Update actual count
+  sff_filter_count = filter_idx;
+  
+  // Ensure we have at least a few filters
+  sff_filter_count = max(sff_filter_count, 8);
+);
+
+// Map FFT bin to filter index
+function sff_bin_to_filter_index(bin) local(hz, i, best_idx, best_diff, diff) (
+  hz = sff_bin_to_hz(bin);
+  hz < SFF_FILTER_MIN_HZ ? (
+    best_idx = 0;
+  ) : hz > SFF_FILTER_MAX_HZ ? (
+    best_idx = sff_filter_count - 1;
+  ) : (
+    best_idx = 0;
+    best_diff = 999999;
+    i = 0;
+    loop(sff_filter_count,
+      diff = abs(sff_filter_freq[i] - hz);
+      diff < best_diff ? (
+        best_diff = diff;
+        best_idx = i;
+      );
+      i += 1;
+    );
+  );
+  best_idx;
+);
+
+// Map filter index to FFT bin
+function sff_filter_to_bin_index(filter_idx) local(hz) (
+  filter_idx >= sff_filter_count ? (
+    pos_bin_count - 1;
+  ) : (
+    hz = sff_filter_freq[filter_idx];
+    sff_hz_to_bin(hz);
+  );
+);
+
