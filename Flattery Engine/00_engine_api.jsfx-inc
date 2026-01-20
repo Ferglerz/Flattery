@@ -172,11 +172,6 @@ function flattery_process_sample() local(params_base, n, delay_read_pos, delayed
   spl1 = sff_mix_dry_wet(delayed_R, wetR, wet_mix) * output_gain_linear;
 );
 
-// Render UI
-function flattery_render_ui(params_base) (
-  params_base == 0 ? sff_ui_draw() : sff_ui_draw_with_params(params_base);
-);
-
 // ============================================================================
 // SIMPLIFIED API - For slider-based plugins
 // ============================================================================

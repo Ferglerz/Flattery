@@ -75,13 +75,14 @@ import ../Flattery Engine/03_Processing/03_Filtering/03_filter_mapping.jsfx-inc
 import ../Flattery Engine/03_Processing/04_Output/01_output_mix.jsfx-inc
 
 // Phase 3: UI
-import ../Flattery Engine/04_UI/01_ui_constants.jsfx-inc
-import ../Flattery Engine/04_UI/02_ui_coordinates.jsfx-inc
-import ../Flattery Engine/04_UI/03_ui_rendering_helpers.jsfx-inc
-import ../Flattery Engine/04_UI/04_ui_graph_rendering.jsfx-inc
-import ../Flattery Engine/04_UI/05_ui_interaction.jsfx-inc
-import ../Flattery Engine/04_UI/06_ui_orchestration.jsfx-inc
-import ../Flattery Engine/04_UI/07_ui.jsfx-inc
+import ./01_ui_constants.jsfx-inc
+import ./02_ui_coordinates.jsfx-inc
+import ./03_ui_rendering_helpers.jsfx-inc
+import ./04_ui_graph_rendering.jsfx-inc
+import ./05_ui_interaction.jsfx-inc
+import ./06_ui_orchestration.jsfx-inc
+import ./07_ui.jsfx-inc
+import ./08_ui_api.jsfx-inc
 
 // Phase 4: Engine API (must be last - depends on everything)
 import ../Flattery Engine/00_engine_api.jsfx-inc

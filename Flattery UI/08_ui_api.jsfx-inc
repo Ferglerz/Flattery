@@ -1,0 +1,9 @@
+// Flattery UI - Main API
+// UI rendering function for the Flattery plugin
+
+@init
+
+// Render UI
+function flattery_render_ui(params_base) (
+  params_base == 0 ? sff_ui_draw() : sff_ui_draw_with_params(params_base);
+);
