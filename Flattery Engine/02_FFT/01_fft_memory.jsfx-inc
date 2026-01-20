@@ -58,6 +58,12 @@ function sff_allocate_memory() local(maxn, fft_buf_len, out_len, pos_bins, displ
   // Median scratch buffer (radius-aware window)
   sff_median_buf = sff_mem_next;       sff_mem_next += SFF_MAX_MEDIAN_WIN;
 
+  // Wavelet transient detection buffers
+  sff_wavelet_input = sff_mem_next;    sff_mem_next += maxn;  // Input buffer for analysis
+  sff_wavelet_approx = sff_mem_next;   sff_mem_next += maxn;  // Approximation coefficients
+  sff_wavelet_detail = sff_mem_next;   sff_mem_next += maxn;  // Detail coefficients
+  // Note: sff_transient_protection is a global variable, not allocated here
+
   // Filter bank memory will be allocated after filter count is calculated
   // (allocated in sff_init_filter_bank after sff_init_filter_frequencies)
   sff_filter_freq_base = sff_mem_next;  // Reserve space for filter frequencies

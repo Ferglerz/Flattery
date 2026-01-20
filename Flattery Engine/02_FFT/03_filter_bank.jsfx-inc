@@ -15,13 +15,6 @@ function sff_min_filter_spacing(freq) local(ratio) (
   freq * (ratio - 1);  // Minimum spacing at this frequency
 );
 
-// Calculate number of filters needed (one per bin, respecting 24 per octave limit)
-function sff_calculate_filter_count() (
-  // Filter count will be determined during initialization based on bins
-  // This function is kept for compatibility but count is set in sff_init_filter_frequencies
-  sff_filter_count = 0;
-);
-
 // Calculate filter center frequencies - one per bin, respecting 24 per octave limit
 function sff_init_filter_frequencies() local(i, bin_idx, bin_freq, last_filter_freq, min_spacing, filter_idx) (
   // Set filter frequency array base
@@ -58,29 +51,6 @@ function sff_init_filter_frequencies() local(i, bin_idx, bin_freq, last_filter_f
   
   // Ensure we have at least a few filters
   sff_filter_count = max(sff_filter_count, 8);
-);
-
-// Map FFT bin to filter index
-function sff_bin_to_filter_index(bin) local(hz, i, best_idx, best_diff, diff) (
-  hz = sff_bin_to_hz(bin);
-  hz < SFF_FILTER_MIN_HZ ? (
-    best_idx = 0;
-  ) : hz > SFF_FILTER_MAX_HZ ? (
-    best_idx = sff_filter_count - 1;
-  ) : (
-    best_idx = 0;
-    best_diff = 999999;
-    i = 0;
-    loop(sff_filter_count,
-      diff = abs(sff_filter_freq[i] - hz);
-      diff < best_diff ? (
-        best_diff = diff;
-        best_idx = i;
-      );
-      i += 1;
-    );
-  );
-  best_idx;
 );
 
 // Map filter index to FFT bin

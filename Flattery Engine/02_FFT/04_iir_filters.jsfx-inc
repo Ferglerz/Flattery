@@ -126,66 +126,6 @@ function sff_update_filter_coeffs() local(i, center_hz, q, gain_linear) (
   );
 );
 
-// Process one sample through a single filter
-function sff_process_filter_sample(input, filter_idx, is_right) local(
-  state_base, coeff_base, x1, x2, y1, y2, b0, b1, b2, a1, a2, output
-) (
-  state_base = filter_idx * 4;
-  coeff_base = filter_idx * 5;
-  
-  // Get state variables
-  is_right ? (
-    x1 = sff_filter_state_R[state_base + 0];
-    x2 = sff_filter_state_R[state_base + 1];
-    y1 = sff_filter_state_R[state_base + 2];
-    y2 = sff_filter_state_R[state_base + 3];
-  ) : (
-    x1 = sff_filter_state_L[state_base + 0];
-    x2 = sff_filter_state_L[state_base + 1];
-    y1 = sff_filter_state_L[state_base + 2];
-    y2 = sff_filter_state_L[state_base + 3];
-  );
-  
-  // Get coefficients
-  b0 = sff_filter_coeffs[coeff_base + 0];
-  b1 = sff_filter_coeffs[coeff_base + 1];
-  b2 = sff_filter_coeffs[coeff_base + 2];
-  a1 = sff_filter_coeffs[coeff_base + 3];
-  a2 = sff_filter_coeffs[coeff_base + 4];
-  
-  // Biquad filter: y[n] = b0*x[n] + b1*x[n-1] + b2*x[n-2] - a1*y[n-1] - a2*y[n-2]
-  output = b0 * input + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-  
-  // Update state
-  is_right ? (
-    sff_filter_state_R[state_base + 0] = input;
-    sff_filter_state_R[state_base + 1] = x1;
-    sff_filter_state_R[state_base + 2] = output;
-    sff_filter_state_R[state_base + 3] = y1;
-  ) : (
-    sff_filter_state_L[state_base + 0] = input;
-    sff_filter_state_L[state_base + 1] = x1;
-    sff_filter_state_L[state_base + 2] = output;
-    sff_filter_state_L[state_base + 3] = y1;
-  );
-  
-  output;
-);
-
-// Check if all filters are at unity gain (bypass condition)
-function sff_all_filters_unity() local(i, all_unity) (
-  all_unity = 1;
-  i = 0;
-  loop(sff_filter_count,
-    abs(sff_filter_gains[i] - 1.0) > 0.001 ? (
-      all_unity = 0;
-      i = sff_filter_count;  // Exit early
-    );
-    i += 1;
-  );
-  all_unity;
-);
-
 // Update cached unity flag (call after filter gains change)
 function sff_update_unity_cache_flag() local(i) (
   sff_filters_all_unity_cached = 1;

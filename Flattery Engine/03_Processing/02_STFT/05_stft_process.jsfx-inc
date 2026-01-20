@@ -8,6 +8,9 @@ function sff_process_stereo_frame() local(do_recompute) (
   // Stage 1: Build spectrum from ring buffer
   sff_build_spectrum_from_ring();
   
+  // Stage 1.5: Detect transients using wavelets (if enabled)
+  sff_wavelet_enabled ? sff_compute_transient_mask() : (sff_transient_protection = 0);
+  
   // Stage 2: Perform FFT analysis
   sff_analyze_spectrum();
   
@@ -31,7 +34,7 @@ function sff_process_stereo_frame() local(do_recompute) (
     sff_update_ui_magnitudes();
   );
   
-  // Stage 6: Apply gains to spectra
+  // Stage 6: Apply gains to spectra (with transient protection)
   sff_apply_gains_to_spectra();
   
   // Stage 7: Synthesize spectra (IFFT)

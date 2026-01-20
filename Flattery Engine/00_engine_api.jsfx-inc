@@ -88,9 +88,10 @@ function flattery_update_params(params_base) (
     sff_handle_fft_size_change(desired_fft);
   );
 
-  strength_internal = sff_param_get_strength(params_base) * 0.01;
+  strength_boost_internal = sff_param_get_strength_boost(params_base) * 0.01;
+  strength_cut_internal = sff_param_get_strength_cut(params_base) * 0.01;
 
-  strength_internal == 0 ? sff_map_fft_gains_to_filters();
+  (strength_boost_internal == 0 && strength_cut_internal == 0) ? sff_map_fft_gains_to_filters();
   sff_update_filter_coeffs();
 
   // Apply cut ranges immediately so active filters update on slider changes
@@ -102,12 +103,13 @@ function flattery_update_params(params_base) (
   // This ensures filters in the new active range have correct gains
   (sff_param_get_low_cut_hz(params_base) != sff_last_low_cut_hz ||
    sff_param_get_high_cut_hz(params_base) != sff_last_high_cut_hz) ? (
-    strength_internal > 0 ? sff_map_fft_gains_to_filters();
+    (strength_boost_internal > 0 || strength_cut_internal > 0) ? sff_map_fft_gains_to_filters();
     sff_last_low_cut_hz = sff_param_get_low_cut_hz(params_base);
     sff_last_high_cut_hz = sff_param_get_high_cut_hz(params_base);
   );
 
-  wet_mix = sff_param_get_wet(params_base) * 0.01;
+  // Always use 100% wet (Reaper provides wet/dry control)
+  wet_mix = 1.0;
   output_gain_linear = sff_db_to_linear(sff_param_get_output_gain_db(params_base));
   tilt_amount = sff_param_get_tilt(params_base) * 0.01;
   tilt_freq_hz = sff_param_get_tilt_freq_hz(params_base);
@@ -158,7 +160,7 @@ function flattery_process_sample() local(params_base, n, delay_read_pos, delayed
     sff_map_fft_gains_to_filters();
   );
 
-  strength_internal == 0 ? (
+  (strength_boost_internal == 0 && strength_cut_internal == 0) ? (
     wetL = delayed_L;
     wetR = delayed_R;
   ) : (
@@ -170,19 +172,9 @@ function flattery_process_sample() local(params_base, n, delay_read_pos, delayed
   spl1 = sff_mix_dry_wet(delayed_R, wetR, wet_mix) * output_gain_linear;
 );
 
-// Update block-level parameters (call in @block)
-function flattery_update_block() (
-  sff_update_time_coeffs();
-);
-
 // Render UI
 function flattery_render_ui(params_base) (
   params_base == 0 ? sff_ui_draw() : sff_ui_draw_with_params(params_base);
-);
-
-// Get PDC delay
-function flattery_get_pdc_delay() (
-  sff_analysis_delay|0;
 );
 
 // ============================================================================

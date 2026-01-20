@@ -135,13 +135,13 @@ function sff_apply_tilt_compensation(target_gain_linear, tilt_mult_scaled) local
   // When tilt is applied, it changes the relative strength of boosts/cuts across frequency
   // To compensate, apply an inverse gain that's proportional to the tilt strength
   // This helps maintain overall tonal balance while still allowing tilt to affect relative strength
-  // Compensation is reduced to 20% (40% * 0.5) to better match perceived tonal balance
+  // Compensation is reduced to 10% (halved from 20%) to better match perceived tonal balance
   // Uses dB scale for symmetric compensation (power scale, not linear)
   abs(tilt_amount) > 0.001 ? (
     // Convert tilt multiplier to dB for symmetric compensation
     tilt_mult_db = sff_linear_to_db(tilt_mult_scaled);
     // Apply inverse compensation in dB scale (negate the tilt effect)
-    compensation_db = -tilt_mult_db * abs(tilt_amount) * 0.2;  // 20% compensation, scaled by tilt amount
+    compensation_db = -tilt_mult_db * abs(tilt_amount) * 0.1;  // 10% compensation (halved), scaled by tilt amount
     // Convert compensation back to linear
     compensation_linear = sff_db_to_linear(compensation_db);
     // Apply compensation to linear gain

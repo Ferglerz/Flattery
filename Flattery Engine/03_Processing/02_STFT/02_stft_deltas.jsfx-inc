@@ -20,17 +20,45 @@ function sff_display_write_gain_db(bin, gain_db, is_right) (
 );
 
 // Compute gain deltas for all bins
-function sff_compute_gain_deltas() local(k, radius) (
+// Optimized: skips first and last bins, and bins with differences under 0.5dB
+function sff_compute_gain_deltas() local(k, radius, delta_L, delta_R, delta_link, abs_delta_L, abs_delta_R, abs_delta_link) (
   radius = 1;  // Hardcoded to 1 (Radius slider removed)
   
+  // Process all bins to create amplitude array (for display)
   k = 0;
   loop(pos_bin_count,
-    sff_delta_db_L[k] = sff_compute_delta_db_for_bin(magL_base, k, radius);
-    sff_delta_db_R[k] = sff_compute_delta_db_for_bin(magR_base, k, radius);
-    sff_delta_db_link[k] = sff_compute_delta_db_for_bin_link(magL_base, magR_base, k, radius);
     sff_display_write_mag_db(k, sff_stereo_avg(magL_base[k], magR_base[k]));
     k += 1;
   );
+  
+  // Process bins other than 1st and last, skipping if difference is under 0.5dB
+  k = 1;  // Start from second bin (skip first bin at k=0)
+  loop(pos_bin_count - 2,  // Process all except first and last
+    // Compute deltas
+    delta_L = sff_compute_delta_db_for_bin(magL_base, k, radius);
+    delta_R = sff_compute_delta_db_for_bin(magR_base, k, radius);
+    delta_link = sff_compute_delta_db_for_bin_link(magL_base, magR_base, k, radius);
+    
+    // Check if absolute difference is under 0.5dB threshold
+    abs_delta_L = abs(delta_L);
+    abs_delta_R = abs(delta_R);
+    abs_delta_link = abs(delta_link);
+    
+    // Skip processing if difference is under 0.5dB
+    sff_delta_db_L[k] = abs_delta_L < 0.5 ? 0 : delta_L;
+    sff_delta_db_R[k] = abs_delta_R < 0.5 ? 0 : delta_R;
+    sff_delta_db_link[k] = abs_delta_link < 0.5 ? 0 : delta_link;
+    
+    k += 1;
+  );
+  
+  // Set first and last bins to zero (skipped)
+  sff_delta_db_L[0] = 0;
+  sff_delta_db_R[0] = 0;
+  sff_delta_db_link[0] = 0;
+  sff_delta_db_L[pos_bin_count - 1] = 0;
+  sff_delta_db_R[pos_bin_count - 1] = 0;
+  sff_delta_db_link[pos_bin_count - 1] = 0;
 );
 
 // Update UI magnitudes only (cheap operation)

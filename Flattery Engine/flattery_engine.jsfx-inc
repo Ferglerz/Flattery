@@ -21,6 +21,8 @@ import ./02_FFT/04_iir_filters.jsfx-inc
 import ./03_Processing/01_Core/01_param_cache.jsfx-inc
 import ./03_Processing/01_Core/02_attack_release.jsfx-inc
 import ./03_Processing/01_Core/03_surround_logic.jsfx-inc
+// Wavelet transient protection (must be before STFT modules that use it)
+import ./03_Processing/05_Wavelet/01_wavelet_transient.jsfx-inc
 // STFT processing
 import ./03_Processing/02_STFT/01_stft_spectrum.jsfx-inc
 import ./03_Processing/02_STFT/02_stft_deltas.jsfx-inc

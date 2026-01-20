@@ -80,8 +80,8 @@ function sff_map_single_filter_gain(filter_idx) local(
 // Each filter gets gain from the closest FFT bin(s)
 // FFT gains are in dB relative to unity (0dB = no change)
 function sff_map_fft_gains_to_filters() local(i, filter_freq) (
-  // If strength_internal is zero, set all filters to unity gain and return early
-  strength_internal == 0 ? (
+  // If both strength values are zero, set all filters to unity gain and return early
+  (strength_boost_internal == 0 && strength_cut_internal == 0) ? (
     sff_reset_filters_to_unity();
   ) : (
     i = 0;

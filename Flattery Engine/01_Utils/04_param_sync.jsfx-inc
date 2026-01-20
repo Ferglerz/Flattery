@@ -9,10 +9,10 @@
 function sff_sync_params_to_globals(params_base) (
   // Core parameters
   fft_size_sel = sff_param_get_fft_size_sel(params_base);
-  strength = sff_param_get_strength(params_base);
+  strength_boost = sff_param_get_strength_boost(params_base);
+  strength_cut = sff_param_get_strength_cut(params_base);
   max_boost_db = sff_param_get_max_boost_db(params_base);
   max_cut_db = sff_param_get_max_cut_db(params_base);
-  wet = sff_param_get_wet(params_base);
   output_gain_db = sff_param_get_output_gain_db(params_base);
   
   // Processing mode
@@ -20,6 +20,7 @@ function sff_sync_params_to_globals(params_base) (
   stereo_link = sff_param_get_stereo_link(params_base);
   neighbor_radius = sff_param_get_neighbor_radius(params_base);
   neighbor_mode = sff_param_get_neighbor_mode(params_base);
+  amplify_mode = sff_param_get_amplify_mode(params_base);
   
   // Timing
   attack_ms = sff_param_get_attack_ms(params_base);
@@ -35,5 +36,10 @@ function sff_sync_params_to_globals(params_base) (
   // Tilt
   tilt = sff_param_get_tilt(params_base);
   tilt_freq_hz = sff_param_get_tilt_freq_hz(params_base);
+  
+  // Transient protection
+  sff_wavelet_enabled = sff_param_get_transient_enabled(params_base);
+  sff_transient_sensitivity = sff_param_get_transient_sensitivity(params_base) * 0.01;  // Convert 0-100 to 0-1
+  sff_transient_amount = sff_param_get_transient_amount(params_base) * 0.01;  // Convert 0-100 to 0-1
 );
 

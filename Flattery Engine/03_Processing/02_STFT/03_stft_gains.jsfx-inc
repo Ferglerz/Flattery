@@ -16,27 +16,34 @@ function sff_apply_gain_to_spec_bin(spec_base, k, g_lin, n) local(kn) (
   ) : 0;
 );
 
-// Helper: Compute effective strength for a bin (no band scaling)
-function sff_compute_effective_strength(bin) (
-  strength_internal;
+// Helper: Compute effective strength for a bin based on delta sign
+// Uses boost strength for positive deltas, cut strength for negative deltas
+function sff_compute_effective_strength(bin, delta_db) (
+  delta_db > 0 ? strength_boost_internal : strength_cut_internal;
 );
 
 // Apply gains to a single spectrum
-function sff_apply_gains_to_spec(spec_base, gain_db_base, delta_db_base, mag_base, is_right) local(n, k, target_gain_db, smooth_gain_db, g_lin, link, ind_delta, link_delta, delta, str_eff, active) (
+function sff_apply_gains_to_spec(spec_base, gain_db_base, delta_db_base, mag_base, is_right) local(n, k, target_gain_db, smooth_gain_db, g_lin, link, ind_delta, link_delta, delta, str_eff, active, protection) (
   n = fft_size|0;
   link = stereo_link * 0.01;
 
   k = 0;
   loop(pos_bin_count,
     active = sff_bin_is_active(k, mag_base[k]);
-    str_eff = sff_compute_effective_strength(k);
-
+    
     ind_delta = delta_db_base[k];
     link_delta = sff_delta_db_link[k];
     delta = ind_delta * (1 - link) + link_delta * link;
+    
+    str_eff = sff_compute_effective_strength(k, delta);
 
     target_gain_db = active ? sff_clamp_gain(delta * str_eff, max_boost_db, max_cut_db) : 0;
     smooth_gain_db = sff_smooth_gain_db(gain_db_base, k, target_gain_db);
+    
+    // Apply transient protection (reduces gain when transients detected)
+    protection = sff_get_transient_protection(k);
+    smooth_gain_db = sff_apply_transient_protection(smooth_gain_db, protection);
+    
     g_lin = sff_db_to_linear(smooth_gain_db);
 
     sff_apply_gain_to_spec_bin(spec_base, k, g_lin, n);
@@ -47,19 +54,25 @@ function sff_apply_gains_to_spec(spec_base, gain_db_base, delta_db_base, mag_bas
 );
 
 // Apply linked gains to both spectra (stereo link >= 99.5%)
-function sff_apply_linked_gains_to_specs() local(n, k, mag_avg, str_eff, target_gain_db, smooth_gain_db, g_lin) (
+function sff_apply_linked_gains_to_specs() local(n, k, mag_avg, str_eff, target_gain_db, smooth_gain_db, g_lin, protection) (
   n = fft_size|0;
   memset(sff_display_gain_db, 0, sff_display_bin_count);
 
   k = 0;
   loop(pos_bin_count,
     mag_avg = sff_stereo_avg(magL_base[k], magR_base[k]);
-    str_eff = sff_compute_effective_strength(k);
+    delta = sff_delta_db_link[k];
+    str_eff = sff_compute_effective_strength(k, delta);
 
     target_gain_db = sff_bin_is_active(k, mag_avg) ? (
-      sff_clamp_gain(sff_delta_db_link[k] * str_eff, max_boost_db, max_cut_db)
+      sff_clamp_gain(delta * str_eff, max_boost_db, max_cut_db)
     ) : 0;
     smooth_gain_db = sff_smooth_gain_db(sff_gain_db_link, k, target_gain_db);
+    
+    // Apply transient protection (reduces gain when transients detected)
+    protection = sff_get_transient_protection(k);
+    smooth_gain_db = sff_apply_transient_protection(smooth_gain_db, protection);
+    
     g_lin = sff_db_to_linear(smooth_gain_db);
 
     sff_apply_gain_to_spec_bin(sff_spec_L, k, g_lin, n);

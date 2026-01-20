@@ -78,6 +78,12 @@ function sff_reset_runtime_state() local(n, outn, pos_bins) (
   memset(sff_delta_db_link, 0, pos_bins);
   memset(sff_display_mag_db, -120, SFF_MAX_DISPLAY_BINS);
   memset(sff_display_gain_db, 0, SFF_MAX_DISPLAY_BINS);
+  
+  // Reset wavelet buffers
+  memset(sff_wavelet_input, 0, n);
+  memset(sff_wavelet_approx, 0, n);
+  memset(sff_wavelet_detail, 0, n);
+  sff_transient_protection = 0;
 );
 
 function sff_set_fft_size(new_size) local(n, maxn, n_inv, srate_inv) (

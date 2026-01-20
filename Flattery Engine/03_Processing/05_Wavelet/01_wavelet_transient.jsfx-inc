@@ -1,0 +1,148 @@
+// Flattery Engine - Wavelet Transient Detection
+// Uses Haar wavelet transform to detect transients and protect them from smoothing
+
+@init
+
+// Haar wavelet transform constants
+// Haar scaling function: h[0] = 1/sqrt(2), h[1] = 1/sqrt(2)
+// Haar wavelet: g[0] = 1/sqrt(2), g[1] = -1/sqrt(2)
+SFF_HAAR_SCALE = 0.7071067811865476;  // 1/sqrt(2)
+
+// Maximum wavelet decomposition levels
+SFF_MAX_WAVELET_LEVELS = 4;
+
+// Transient detection state (global variables)
+sff_wavelet_enabled = 0;
+sff_transient_sensitivity = 0.5;  // 0-1, how sensitive to transients
+sff_transient_amount = 0.5;  // 0-1, how much to protect (0=no protection, 1=full protection)
+sff_transient_threshold = 0.1;  // Threshold for transient detection (linear)
+sff_transient_protection = 0;  // Current protection value (0-1) for current window
+
+// Wavelet buffers (allocated in memory module)
+// sff_wavelet_input - input buffer for wavelet analysis
+// sff_wavelet_detail - detail coefficients (high frequency components)
+// sff_wavelet_approx - approximation coefficients (low frequency components)
+// sff_transient_mask - protection mask per sample (0=no protection, 1=full protection)
+
+// Haar wavelet decomposition (single level)
+// Input: buffer[base..base+length-1] (read from)
+// Output: approx[0..length/2-1], detail[length/2..length-1] (write to)
+function sff_haar_decompose(buffer_base, length) local(i, scale, a_idx, d_idx, even, odd) (
+  scale = SFF_HAAR_SCALE;
+  i = 0;
+  loop(length / 2,
+    even = buffer_base[i * 2];
+    odd = buffer_base[i * 2 + 1];
+    // Approximation (low-pass): average
+    a_idx = i;
+    sff_wavelet_approx[a_idx] = scale * (even + odd);
+    // Detail (high-pass): difference
+    d_idx = i + (length / 2);
+    sff_wavelet_detail[d_idx] = scale * (even - odd);
+    i += 1;
+  );
+);
+
+// Multi-level Haar decomposition
+// Analyzes signal and extracts detail coefficients at multiple scales
+function sff_wavelet_analyze(buffer_base, length, levels) local(i, level, current_len, detail_base, max_detail, temp_base) (
+  current_len = length;
+  max_detail = 0;
+  temp_base = sff_wavelet_approx;  // Use approximation buffer as temp storage
+  
+  // Copy input to temp buffer for first level
+  i = 0;
+  loop(length,
+    temp_base[i] = buffer_base[i];
+    i += 1;
+  );
+  
+  // Decompose at each level
+  level = 0;
+  loop(levels,
+    current_len >= 2 ? (
+      // Decompose from temp buffer
+      sff_haar_decompose(temp_base, current_len);
+      // Find maximum detail coefficient at this level
+      detail_base = current_len / 2;
+      i = 0;
+      loop(current_len / 2,
+        max_detail = max(max_detail, abs(sff_wavelet_detail[detail_base + i]));
+        i += 1;
+      );
+      // Copy approximation to temp for next level
+      i = 0;
+      loop(current_len / 2,
+        temp_base[i] = sff_wavelet_approx[i];
+        i += 1;
+      );
+      current_len = current_len / 2;
+      level += 1;
+    ) : 0;
+  );
+  
+  max_detail;
+);
+
+// Detect transients from wavelet detail coefficients
+// Returns transient energy estimate (0-1)
+function sff_detect_transient_energy(buffer_base, length, levels) local(max_detail, threshold, energy) (
+  max_detail = sff_wavelet_analyze(buffer_base, length, levels);
+  threshold = sff_transient_threshold * (1.0 + sff_transient_sensitivity);
+  // Normalize and apply sensitivity
+  energy = min(1.0, max_detail / (threshold + eps));
+  energy;
+);
+
+// Create transient protection mask for FFT window
+// Analyzes the input ring buffer and creates a mask that reduces smoothing during transients
+function sff_compute_transient_mask() local(n, i, window_start, transient_energy, protection, sample_idx) (
+  n = fft_size|0;
+  
+  // Analyze the current FFT window from the input ring buffer
+  // We need to extract the window that will be analyzed by FFT
+  i = 0;
+  loop(n,
+    // Read backwards from current position (same as FFT analysis)
+    sample_idx = (sff_ring_pos - n + i + n) % n;
+    sff_wavelet_input[i] = sff_in_ring_L[sample_idx];
+    i += 1;
+  );
+  
+  // Detect transient energy in this window
+  transient_energy = sff_detect_transient_energy(sff_wavelet_input, n, SFF_MAX_WAVELET_LEVELS);
+  
+  // Create protection mask: higher transient energy = more protection
+  // protection = transient_energy * transient_amount
+  protection = transient_energy * sff_transient_amount;
+  
+  // Store as a single value for the entire window (could be per-sample, but per-window is simpler)
+  // We'll apply this to all bins uniformly, or could weight by frequency
+  sff_transient_protection = protection;
+  
+  protection;
+);
+
+// Get transient protection factor for a frequency bin
+// Returns 0 (no protection) to 1 (full protection)
+// Can be frequency-dependent if needed
+function sff_get_transient_protection(bin) (
+  sff_wavelet_enabled ? sff_transient_protection : 0;
+);
+
+// Apply transient protection to a gain value
+// Reduces the applied gain when transients are detected
+// protection: 0 = no protection (full smoothing), 1 = full protection (no smoothing)
+// gain_db: the gain to apply (in dB)
+// Returns: modified gain_db that is reduced when protection is active
+function sff_apply_transient_protection(gain_db, protection) local(protected_gain) (
+  protection > 0 ? (
+    // Linearly interpolate between full gain and no gain based on protection amount
+    // protection=0: full gain (no protection)
+    // protection=1: no gain (full protection)
+    protected_gain = gain_db * (1.0 - protection);
+    protected_gain;
+  ) : (
+    gain_db;
+  );
+);
