@@ -53,7 +53,7 @@ function sff_reset_runtime_state() local(n, outn, pos_bins) (
   pos_bins = n*0.5;
 
   sff_ring_pos = 0;
-  sff_hop_counter = 0;
+  sff_hop_counter = 0;  // Critical: reset to prevent misalignment after FFT size change
   sff_out_read_pos = 0;
 
   memset(sff_in_ring_L, 0, n);
