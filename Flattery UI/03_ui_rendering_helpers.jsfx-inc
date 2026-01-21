@@ -2,25 +2,35 @@
 @init 
 
 // Draw downward triangle
-function sff_draw_triangle(x, y, size, r,g,b) local(i,v,w)(
+// direction: 0=symmetric, 1=right-angled (right side only), -1=left-angled (left side only)
+function sff_draw_triangle(x, y, size, direction, r,g,b) local(i,v,w)(
   i=0;
+  x = floor(x + 0.5); // Integer align
   loop(size+1,
     v = i/size; w = size*(1-v);
     gfx_set(r,g,b,1);
-    gfx_line(x-w, y+i, x+w, y+i, 0);
+    direction == 0 ? gfx_line(x-w, y+i, x+w, y+i, 0) :
+    direction > 0 ? gfx_line(x, y+i, x+w, y+i, 0) :
+    gfx_line(x-w, y+i, x, y+i, 0);
     i+=1;
   );
 );
 
 // Draw vertical line (3 pixels wide) and optional triangle on top
-function sff_draw_cut_line(x, y_top, y_bottom, tri_size, r,g,b) local(line_width, half_width)(
+// side: 1=low cut (right triangle), -1=high cut (left triangle)
+function sff_draw_cut_line(x, y_top, y_bottom, tri_size, side, r,g,b) local(line_width, half_width, ix)(
   line_width = SFF_CUT_LINE_WIDTH;
-  half_width = line_width * 0.5;
-  // Draw 3-pixel wide line as a filled rectangle (shifted 1 pixel right to center with triangle)
+  half_width = floor(line_width * 0.5);
+  ix = floor(x + 0.5); // Integer align
+  
+  // Draw 3-pixel wide line as a filled rectangle
+  // Using integer aligned ix ensures it matches the triangle base exactly
   gfx_set(r,g,b,1);
-  gfx_rect(x - half_width + 1, y_top, line_width, y_bottom - y_top);
-  tri_size>0 ? sff_draw_triangle(x, y_top, tri_size, r,g,b):0;
+  gfx_rect(ix - half_width, y_top, line_width, y_bottom - y_top);
+  
+  tri_size>0 ? sff_draw_triangle(ix, y_top, tri_size, side, r,g,b):0;
 );
+
 
 // Draw a single dB label (unit removed for cleaner axis)
 function sff_draw_db_label(db, x, y_base, h, inv_scale, plus) local(y)(

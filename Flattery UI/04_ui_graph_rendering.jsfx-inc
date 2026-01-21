@@ -93,9 +93,10 @@ function sff_draw_tilt_visualization(x0, y_base, h, draw_bins, draw_bins_inv, mi
 
 // Draw cut lines simply
 function sff_draw_cut_lines(low_cut_x, high_cut_x, triangle_top_y, y_base, triangle_size) (
-  sff_draw_cut_line(low_cut_x, triangle_top_y, y_base, triangle_size, SFF_COLOR_LOW_CUT_R, SFF_COLOR_LOW_CUT_G, SFF_COLOR_LOW_CUT_B);
-  sff_draw_cut_line(high_cut_x, triangle_top_y, y_base, triangle_size, SFF_COLOR_HIGH_CUT_R, SFF_COLOR_HIGH_CUT_G, SFF_COLOR_HIGH_CUT_B);
+  sff_draw_cut_line(low_cut_x, triangle_top_y, y_base, triangle_size, 1, SFF_COLOR_LOW_CUT_R, SFF_COLOR_LOW_CUT_G, SFF_COLOR_LOW_CUT_B);
+  sff_draw_cut_line(high_cut_x, triangle_top_y, y_base, triangle_size, -1, SFF_COLOR_HIGH_CUT_R, SFF_COLOR_HIGH_CUT_G, SFF_COLOR_HIGH_CUT_B);
 );
+
 
 // Simplified label drawing
 function sff_draw_labels(x0, y_base, h, draw_bins, min_freq, max_freq) local(scale) (

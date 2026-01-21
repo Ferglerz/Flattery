@@ -12,8 +12,11 @@ function sff_handle_cut_line_interaction(low_cut_x, high_cut_x, triangle_top_y, 
   mouse_over_low, mouse_over_high, hit_dist, new_freq, new_pos
 ) (
   hit_dist = SFF_HIT_DISTANCE;  // Doubled hit distance
-  mouse_over_low  = abs(mouse_x - low_cut_x)  < hit_dist && mouse_y >= triangle_top_y && mouse_y <= triangle_top_y + SFF_TRIANGLE_SIZE + (h - 4);
-  mouse_over_high = abs(mouse_x - high_cut_x) < hit_dist && mouse_y >= triangle_top_y && mouse_y <= triangle_top_y + SFF_TRIANGLE_SIZE + (h - 4);
+  low_cut_ix = floor(low_cut_x + 0.5);
+  high_cut_ix = floor(high_cut_x + 0.5);
+  mouse_over_low  = abs(mouse_x - low_cut_ix)  < hit_dist && mouse_y >= triangle_top_y && mouse_y <= triangle_top_y + SFF_TRIANGLE_SIZE + (h - 4);
+  mouse_over_high = abs(mouse_x - high_cut_ix) < hit_dist && mouse_y >= triangle_top_y && mouse_y <= triangle_top_y + SFF_TRIANGLE_SIZE + (h - 4);
+
 
   // Start/stop dragging
   (mouse_cap & 1) && !sff_dragging_cut ? ( sff_dragging_cut = mouse_over_low ? 1 : mouse_over_high ? 2 : 0; );

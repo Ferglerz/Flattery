@@ -513,8 +513,11 @@ function sff_ui_draw() local(i, j, k, x0, y0, w, h, v, db, y, y_base, avail_w, d
   
   // Mouse interaction: handle dragging
   hit_dist = SFF_HIT_DISTANCE;  // Hit test distance in pixels (doubled)
-  mouse_over_low = abs(mouse_x - low_cut_x) < hit_dist && mouse_y >= triangle_top_y && mouse_y <= triangle_top_y + triangle_size + (h - 4);
-  mouse_over_high = abs(mouse_x - high_cut_x) < hit_dist && mouse_y >= triangle_top_y && mouse_y <= triangle_top_y + triangle_size + (h - 4);
+  low_cut_ix = floor(low_cut_x + 0.5);
+  high_cut_ix = floor(high_cut_x + 0.5);
+  mouse_over_low = abs(mouse_x - low_cut_ix) < hit_dist && mouse_y >= triangle_top_y && mouse_y <= triangle_top_y + triangle_size + (h - 4);
+  mouse_over_high = abs(mouse_x - high_cut_ix) < hit_dist && mouse_y >= triangle_top_y && mouse_y <= triangle_top_y + triangle_size + (h - 4);
+
   
   // Start dragging on mouse down
   (mouse_cap & 1) && !(sff_dragging_cut > 0) ? (
@@ -565,15 +568,16 @@ function sff_ui_draw() local(i, j, k, x0, y0, w, h, v, db, y, y_base, avail_w, d
     // Normal pastel color
     gfx_set(SFF_COLOR_LOW_CUT_R, SFF_COLOR_LOW_CUT_G, SFF_COLOR_LOW_CUT_B, 1);
   );
-  // Draw 3-pixel wide line as filled rectangle (shifted 1 pixel right to center with triangle)
-  gfx_rect(low_cut_x - 0.5, triangle_top_y, SFF_CUT_LINE_WIDTH, y_base - triangle_top_y);
-  // Draw filled triangle pointing down at top
+  // Draw 3-pixel wide line as filled rectangle (centered on integer x)
+  low_cut_ix = floor(low_cut_x + 0.5);
+  gfx_rect(low_cut_ix - floor(SFF_CUT_LINE_WIDTH * 0.5), triangle_top_y, SFF_CUT_LINE_WIDTH, y_base - triangle_top_y);
+  // Draw filled triangle pointing down at top (right-angled, pointing right)
   i = 0;
   loop(triangle_size + 1,
     v = i * triangle_size_inv;  // 0 to 1
     // Calculate width at this Y position (triangle gets narrower as we go down)
     triangle_width = triangle_size * (1 - v);
-    gfx_line(low_cut_x - triangle_width, triangle_top_y + i, low_cut_x + triangle_width, triangle_top_y + i, 0);
+    gfx_line(low_cut_ix, triangle_top_y + i, low_cut_ix + triangle_width, triangle_top_y + i, 0);
     i += 1;
   );
   
@@ -585,15 +589,16 @@ function sff_ui_draw() local(i, j, k, x0, y0, w, h, v, db, y, y_base, avail_w, d
     // Normal pastel color
     gfx_set(SFF_COLOR_HIGH_CUT_R, SFF_COLOR_HIGH_CUT_G, SFF_COLOR_HIGH_CUT_B, 1);
   );
-  // Draw 3-pixel wide line as filled rectangle (shifted 1 pixel right to center with triangle)
-  gfx_rect(high_cut_x - 0.5, triangle_top_y, SFF_CUT_LINE_WIDTH, y_base - triangle_top_y);
-  // Draw filled triangle pointing down at top
+  // Draw 3-pixel wide line as filled rectangle (centered on integer x)
+  high_cut_ix = floor(high_cut_x + 0.5);
+  gfx_rect(high_cut_ix - floor(SFF_CUT_LINE_WIDTH * 0.5), triangle_top_y, SFF_CUT_LINE_WIDTH, y_base - triangle_top_y);
+  // Draw filled triangle pointing down at top (right-angled, pointing left)
   i = 0;
   loop(triangle_size + 1,
     v = i * triangle_size_inv;  // 0 to 1
     // Calculate width at this Y position (triangle gets narrower as we go down)
     triangle_width = triangle_size * (1 - v);
-    gfx_line(high_cut_x - triangle_width, triangle_top_y + i, high_cut_x + triangle_width, triangle_top_y + i, 0);
+    gfx_line(high_cut_ix - triangle_width, triangle_top_y + i, high_cut_ix, triangle_top_y + i, 0);
     i += 1;
   );
 
