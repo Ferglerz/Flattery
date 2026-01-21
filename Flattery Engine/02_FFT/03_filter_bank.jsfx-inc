@@ -51,6 +51,10 @@ function sff_init_filter_frequencies() local(i, bin_idx, bin_freq, last_filter_f
   
   // Ensure we have at least a few filters
   sff_filter_count = max(sff_filter_count, 8);
+  
+  // Clear filter frequencies beyond active count to prevent stale data
+  // Critical when downsizing FFT: old frequencies could cause incorrect mapping
+  memset(sff_filter_freq + sff_filter_count, 0, (256 - sff_filter_count));
 );
 
 // Map filter index to FFT bin
