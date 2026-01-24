@@ -36,11 +36,6 @@ slider18:flattery_high_cut_hz=20000<20,20000,1>-High Cut (Hz)
 slider19:flattery_tilt=0<-100,100,1>-Tilt (%)
 slider20:flattery_tilt_freq_hz=1800<20,20000,1>-Tilt Frequency (Hz)
 
-// Transient protection
-slider21:flattery_transient_enabled=0<0,1,1{Off,On}>Transient Protection
-slider22:flattery_transient_sensitivity=50<0,100,1>Transient Sensitivity (%)
-slider23:flattery_transient_amount=50<0,100,1>Protection Amount (%)
-
 // --- Import Flattery Engine Library ---
 // Single entry point for all engine modules (parameters, FFT, processing, API)
 import Engine/flattery_engine.jsfx-inc

@@ -26,10 +26,7 @@ SFF_PARAM_LOW_CUT_HZ = 16;
 SFF_PARAM_HIGH_CUT_HZ = 17;
 SFF_PARAM_TILT = 18;
 SFF_PARAM_TILT_FREQ_HZ = 19;
-SFF_PARAM_TRANSIENT_ENABLED = 20;
-SFF_PARAM_TRANSIENT_SENSITIVITY = 21;
-SFF_PARAM_TRANSIENT_AMOUNT = 22;
-SFF_PARAM_COUNT = 23;
+SFF_PARAM_COUNT = 20;
 
 // Helper functions to access parameters from parameter array
 function sff_param_get_fft_size_sel(params) ( params[SFF_PARAM_FFT_SIZE_SEL]; );
@@ -52,9 +49,6 @@ function sff_param_get_low_cut_hz(params) ( params[SFF_PARAM_LOW_CUT_HZ]; );
 function sff_param_get_high_cut_hz(params) ( params[SFF_PARAM_HIGH_CUT_HZ]; );
 function sff_param_get_tilt(params) ( params[SFF_PARAM_TILT]; );
 function sff_param_get_tilt_freq_hz(params) ( params[SFF_PARAM_TILT_FREQ_HZ]; );
-function sff_param_get_transient_enabled(params) ( params[SFF_PARAM_TRANSIENT_ENABLED]; );
-function sff_param_get_transient_sensitivity(params) ( params[SFF_PARAM_TRANSIENT_SENSITIVITY]; );
-function sff_param_get_transient_amount(params) ( params[SFF_PARAM_TRANSIENT_AMOUNT]; );
 
 // Initialize parameter array from slider values (called by UI)
 // This function creates a parameter array from current slider values
@@ -80,8 +74,5 @@ function sff_params_from_sliders(params_base) (
   params_base[SFF_PARAM_HIGH_CUT_HZ] = flattery_high_cut_hz;
   params_base[SFF_PARAM_TILT] = flattery_tilt;
   params_base[SFF_PARAM_TILT_FREQ_HZ] = flattery_tilt_freq_hz;
-  params_base[SFF_PARAM_TRANSIENT_ENABLED] = flattery_transient_enabled;
-  params_base[SFF_PARAM_TRANSIENT_SENSITIVITY] = flattery_transient_sensitivity;
-  params_base[SFF_PARAM_TRANSIENT_AMOUNT] = flattery_transient_amount;
 );
 

@@ -36,10 +36,5 @@ function sff_sync_params_to_globals(params_base) (
   // Tilt
   tilt = sff_param_get_tilt(params_base);
   tilt_freq_hz = sff_param_get_tilt_freq_hz(params_base);
-  
-  // Transient protection
-  sff_wavelet_enabled = sff_param_get_transient_enabled(params_base);
-  sff_transient_sensitivity = sff_param_get_transient_sensitivity(params_base) * 0.01;  // Convert 0-100 to 0-1
-  sff_transient_amount = sff_param_get_transient_amount(params_base) * 0.01;  // Convert 0-100 to 0-1
 );
 

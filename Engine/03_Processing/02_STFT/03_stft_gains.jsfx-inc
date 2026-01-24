@@ -4,13 +4,14 @@
 
 // Helper: Apply gain to spec bin (positive and negative frequencies)
 // For real signals: DC (k=0) and Nyquist (k=N/2) are real-only, others have negative mirror
-function sff_apply_gain_to_spec_bin(spec_base, k, g_lin, n) local(kn) (
+// Uses global fft_size directly instead of passing as parameter
+function sff_apply_gain_to_spec_bin(spec_base, k, g_lin) local(kn) (
   sff_spec_set_re(spec_base, k, sff_spec_re(spec_base, k) * g_lin);
   sff_spec_set_im(spec_base, k, sff_spec_im(spec_base, k) * g_lin);
   // Mirror to negative frequency bin (for k > 0 and k < N/2)
   // DC (k=0) and Nyquist (k=N/2) don't have negative frequency mirrors
   (k > 0 && k < pos_bin_count) ? (
-    kn = (n - k)|0;
+    kn = (fft_size - k)|0;
     sff_spec_set_re(spec_base, kn, sff_spec_re(spec_base, kn) * g_lin);
     sff_spec_set_im(spec_base, kn, sff_spec_im(spec_base, kn) * g_lin);
   ) : 0;
@@ -28,8 +29,7 @@ function sff_compute_effective_strength(bin, delta_db) (
 // When is_linked=0: uses spec_base, gain_db_base, delta_db_base, mag_base, is_right
 // When is_linked=1: uses sff_spec_L/R, sff_gain_db_link, sff_delta_db_link, averaged magnitudes
 function sff_apply_gains_core(spec_base, gain_db_base, delta_db_base, mag_base, is_right, is_linked) 
-  local(n, k, target_gain_db, smooth_gain_db, g_lin, link, ind_delta, link_delta, delta, str_eff, active, protection, mag_val) (
-  n = fft_size|0;
+  local(k, target_gain_db, smooth_gain_db, g_lin, link, ind_delta, link_delta, delta, str_eff, active, mag_val) (
   link = stereo_link * 0.01;
 
   is_linked ? memset(sff_display_gain_db, 0, sff_display_bin_count);
@@ -54,20 +54,16 @@ function sff_apply_gains_core(spec_base, gain_db_base, delta_db_base, mag_base, 
     target_gain_db = active ? sff_clamp_gain(delta * str_eff, max_boost_db, max_cut_db) : 0;
     smooth_gain_db = sff_smooth_gain_db(is_linked ? sff_gain_db_link : gain_db_base, k, target_gain_db);
     
-    // Apply transient protection (reduces gain when transients detected)
-    protection = sff_get_transient_protection(k);
-    smooth_gain_db = sff_apply_transient_protection(smooth_gain_db, protection);
-    
     g_lin = sff_db_to_linear(smooth_gain_db);
 
     is_linked ? (
       // Apply to both spectra
-      sff_apply_gain_to_spec_bin(sff_spec_L, k, g_lin, n);
-      sff_apply_gain_to_spec_bin(sff_spec_R, k, g_lin, n);
+      sff_apply_gain_to_spec_bin(sff_spec_L, k, g_lin);
+      sff_apply_gain_to_spec_bin(sff_spec_R, k, g_lin);
       sff_display_write_gain_db(k, smooth_gain_db, 0);
     ) : (
       // Apply to single spectrum
-      sff_apply_gain_to_spec_bin(spec_base, k, g_lin, n);
+      sff_apply_gain_to_spec_bin(spec_base, k, g_lin);
       sff_display_write_gain_db(k, smooth_gain_db, is_right);
     );
 
