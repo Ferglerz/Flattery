@@ -24,15 +24,26 @@ function sff_draw_background(x0, y0, w, h, draw_bins, draw_bins_inv, min_freq, m
   gfx_line(x0, y0 + h, x0, y0, 0);
 );
 
-// Simplified magnitude curve drawing
-function sff_draw_magnitude_curve(x0, y_base, h, draw_bins, min_freq, max_freq, low_cut_hz, high_cut_hz) local(i, x, y, lastx, lasty, v, mag_avg_db, scale) (
-  scale = 1.0 / SFF_MAGNITUDE_DB_SCALE;
+// Generic curve drawing function
+// Parameters:
+//   data_array: Array containing values to plot
+//   count: Number of data points
+//   db_offset: dB offset to add before scaling (e.g., SFF_MAGNITUDE_DB_SCALE or 12)
+//   db_scale: dB scale factor (e.g., SFF_MAGNITUDE_DB_SCALE or SFF_GAIN_DB_SCALE)
+//   x0: Base X position
+//   y_base: Y position of curve baseline
+//   h: Height of drawing area
+//   height_factor: Vertical scaling (e.g., 0.5 for half height, 1.0 for full)
+//   convert_linear: 1 to convert from linear to dB, 0 if already in dB
+function sff_draw_curve(data_array, count, db_offset, db_scale, x0, y_base, h, height_factor, convert_linear) 
+  local(i, x, y, lastx, lasty, v, val_db, scale) (
+  scale = 1.0 / db_scale;
   lastx = lasty = -1;
   i = 0;
-  loop(sff_display_bin_count,
-    mag_avg_db = sff_display_mag_db[i];
-    v = sff_clamp((mag_avg_db + SFF_MAGNITUDE_DB_SCALE)*scale, 0, 1);
-    y = y_base - v * ((h-8) * 0.5);
+  loop(count,
+    val_db = convert_linear ? sff_linear_to_db(data_array[i]) : data_array[i];
+    v = sff_clamp((val_db + db_offset) * scale, 0, 1);
+    y = y_base - v * ((h-8) * height_factor);
     x = x0 + SFF_UI_INNER_MARGIN + i * SFF_UI_BAR_WIDTH;
     (i > 0 && lastx >= 0) ? (
       gfx_line(lastx, lasty, x, y, 0);
@@ -42,22 +53,14 @@ function sff_draw_magnitude_curve(x0, y_base, h, draw_bins, min_freq, max_freq, 
   );
 );
 
-// Simplified filter gain curve
-function sff_draw_filter_gain_curve(x0, y_base, h, draw_bins, min_freq, max_freq, low_cut_hz, high_cut_hz) local(i, x, y, lastx, lasty, v, gain_db, scale) (
-  scale = 1.0 / SFF_GAIN_DB_SCALE;
-  lastx = lasty = -1;
-  i = 0;
-  loop(sff_filter_count,
-    gain_db = sff_linear_to_db(sff_filter_gains[i]);
-    v = sff_clamp((gain_db + 12)*scale, 0, 1);
-    y = y_base - v * (h-8);
-    x = x0 + SFF_UI_INNER_MARGIN + i * SFF_UI_BAR_WIDTH;
-    (i > 0 && lastx >= 0) ? (
-      gfx_line(lastx, lasty, x, y, 0);
-    );
-    lastx = x; lasty = y;
-    i += 1;
-  );
+// Magnitude curve drawing (uses generic curve function)
+function sff_draw_magnitude_curve(x0, y_base, h, draw_bins, min_freq, max_freq, low_cut_hz, high_cut_hz) (
+  sff_draw_curve(sff_display_mag_db, sff_display_bin_count, SFF_MAGNITUDE_DB_SCALE, SFF_MAGNITUDE_DB_SCALE, x0, y_base, h, 0.5, 0);
+);
+
+// Filter gain curve drawing (uses generic curve function)
+function sff_draw_filter_gain_curve(x0, y_base, h, draw_bins, min_freq, max_freq, low_cut_hz, high_cut_hz) (
+  sff_draw_curve(sff_filter_gains, sff_filter_count, 12, SFF_GAIN_DB_SCALE, x0, y_base, h, 1.0, 1);
 );
 
 // Center line at 0 dB
@@ -98,6 +101,16 @@ function sff_draw_cut_lines(low_cut_x, high_cut_x, triangle_top_y, y_base, trian
 );
 
 
+// Draw all frequency labels from arrays (scalable approach)
+// Uses sff_freq_labels array for frequencies and string slots 200+ for label text
+function sff_draw_freq_labels(min_freq, max_freq, x0, draw_bins, y_base) local(i) (
+  i = 0;
+  loop(SFF_FREQ_LABEL_COUNT,
+    sff_draw_frequency_label(sff_freq_labels[i], min_freq, max_freq, x0, draw_bins, y_base, 200 + i);
+    i += 1;
+  );
+);
+
 // Simplified label drawing
 function sff_draw_labels(x0, y_base, h, draw_bins, min_freq, max_freq) local(scale) (
   scale = 1.0 / SFF_GAIN_DB_SCALE;
@@ -105,9 +118,6 @@ function sff_draw_labels(x0, y_base, h, draw_bins, min_freq, max_freq) local(sca
     x0 + SFF_LABEL_OFFSET_X, y_base, h, scale, 0);
   sff_draw_db_labels(SFF_DB_LABEL_START_POS, SFF_DB_LABEL_END_POS, SFF_DB_LABEL_STEP_POS,
     x0 + SFF_LABEL_OFFSET_X, y_base, h, scale, 1);
-  sff_draw_frequency_label(SFF_FREQ_LABEL_500, min_freq, max_freq, x0, draw_bins, y_base, "500 Hz");
-  sff_draw_frequency_label(SFF_FREQ_LABEL_1K, min_freq, max_freq, x0, draw_bins, y_base, "1 kHz");
-  sff_draw_frequency_label(SFF_FREQ_LABEL_2K, min_freq, max_freq, x0, draw_bins, y_base, "2 kHz");
-  sff_draw_frequency_label(SFF_FREQ_LABEL_5K, min_freq, max_freq, x0, draw_bins, y_base, "5 kHz");
-  sff_draw_frequency_label(SFF_FREQ_LABEL_10K, min_freq, max_freq, x0, draw_bins, y_base, "10 kHz");
+  // Draw frequency labels using array-based helper
+  sff_draw_freq_labels(min_freq, max_freq, x0, draw_bins, y_base);
 );

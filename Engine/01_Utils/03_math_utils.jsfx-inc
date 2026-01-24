@@ -25,7 +25,6 @@ function sff_clamp_gain(db, max_boost, max_cut) (
 );
 
 // Bin index/frequency conversion
-function sff_bin_to_hz(bin)  ( bin * bin_hz; );
 function sff_hz_to_bin(hz)   ( floor(hz / (bin_hz + eps)); );
 
 // Snap frequency to nearest bin center

@@ -2,7 +2,6 @@
 // Import this file to use the Flattery Engine library
 // All functions accept parameter arrays instead of reading sliders
 
-@init
 
 // Phase 0: Parameters and Constants
 import ./01_Utils/01_parameters.jsfx-inc
@@ -39,3 +38,5 @@ import ./03_Processing/04_Output/01_output_mix.jsfx-inc
 // Phase 3: Engine API (must be last - depends on everything)
 import ./00_engine_api.jsfx-inc
 
+
+@init

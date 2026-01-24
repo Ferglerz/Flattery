@@ -90,12 +90,24 @@ SFF_FONT_SIZE = 12;  // Font size in pixels (Helvetica font used for clean UI te
 SFF_MAGNITUDE_DB_SCALE = 120;  // -120 dB to 0 dB range
 SFF_GAIN_DB_SCALE = 24;  // -12 dB to +12 dB range
 
-// Frequency Labels
+// Frequency Labels (array-based for scalability)
+SFF_FREQ_LABEL_COUNT = 5;
+// Frequency values stored in sff_freq_labels array (initialized below)
+// Label strings stored in string slots 200-204
+
+// Legacy constants (for backward compatibility)
 SFF_FREQ_LABEL_500 = 500;
 SFF_FREQ_LABEL_1K = 1000;
 SFF_FREQ_LABEL_2K = 2000;
 SFF_FREQ_LABEL_5K = 5000;
 SFF_FREQ_LABEL_10K = 10000;
+
+// Initialize frequency label arrays
+sff_freq_labels[0] = 500;   strcpy(200, "500 Hz");
+sff_freq_labels[1] = 1000;  strcpy(201, "1 kHz");
+sff_freq_labels[2] = 2000;  strcpy(202, "2 kHz");
+sff_freq_labels[3] = 5000;  strcpy(203, "5 kHz");
+sff_freq_labels[4] = 10000; strcpy(204, "10 kHz");
 
 // dB Labels
 SFF_DB_LABEL_START_NEG = -12;
