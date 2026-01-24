@@ -1,11 +1,14 @@
 // Surround FFT Flattener - Math utils
+// Dependencies: MathUtils/00_core_math.jsfx-inc (for clamp, db_to_linear, linear_to_db, eps)
+
+import ../../MathUtils/00_core_math.jsfx-inc
 
 @init
 
-function sff_clamp(x, a, b) ( min(max(x, a), b); );
-
-function sff_db_to_linear(db) ( exp(db * 0.11512925464970229); );
-function sff_linear_to_db(x)   ( log(max(x, eps)) * 8.6858896380650366; );
+// Prefixed wrappers for consistency with Flattery naming convention
+function sff_clamp(x, a, b) ( clamp(x, a, b); );
+function sff_db_to_linear(db) ( db_to_linear(db); );
+function sff_linear_to_db(x) ( linear_to_db(max(x, eps)); );
 
 // Complex spec helpers
 function sff_spec_re(spec, k)    ( spec[k*2]; );
