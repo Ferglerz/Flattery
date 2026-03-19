@@ -54,18 +54,18 @@ function sff_apply_gains_core(spec_base, gain_db_base, delta_db_base, mag_base, 
     target_gain_db = active ? sff_clamp_gain(delta * str_eff, max_boost_db, max_cut_db) : 0;
     smooth_gain_db = sff_smooth_gain_db(is_linked ? sff_gain_db_link : gain_db_base, k, target_gain_db);
     
-    g_lin = sff_db_to_linear(smooth_gain_db);
-
-    is_linked ? (
-      // Apply to both spectra
-      sff_apply_gain_to_spec_bin(sff_spec_L, k, g_lin);
-      sff_apply_gain_to_spec_bin(sff_spec_R, k, g_lin);
-      sff_display_write_gain_db(k, smooth_gain_db, 0);
-    ) : (
-      // Apply to single spectrum
-      sff_apply_gain_to_spec_bin(spec_base, k, g_lin);
-      sff_display_write_gain_db(k, smooth_gain_db, is_right);
-    );
+    abs(smooth_gain_db) >= 0.001 ? (
+      g_lin = sff_db_to_linear(smooth_gain_db);
+      is_linked ? (
+        // Apply to both spectra
+        sff_apply_gain_to_spec_bin(sff_spec_L, k, g_lin);
+        sff_apply_gain_to_spec_bin(sff_spec_R, k, g_lin);
+      ) : (
+        // Apply to single spectrum
+        sff_apply_gain_to_spec_bin(spec_base, k, g_lin);
+      );
+    ) : 0;
+    sff_display_write_gain_db(k, smooth_gain_db, is_linked ? 0 : is_right);
 
     k += 1;
   );

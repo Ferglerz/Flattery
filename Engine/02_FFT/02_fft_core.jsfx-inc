@@ -86,8 +86,10 @@ function sff_set_fft_size(new_size) local(n, maxn, n_inv, srate_inv) (
 
   // Derived parameters
   fft_size = n;
+  fft_mask = n - 1;            // FFT/ring sizes are powers of two
   hop_size = (n * 0.5)|0;  // 50% overlap
   out_buf_size = (2*n)|0;
+  out_buf_mask = out_buf_size - 1;
   pos_bin_count = (n*0.5)|0;
   // UI draws one bar per positive bin, capped by allocation
   sff_display_bin_count = min(pos_bin_count, SFF_MAX_DISPLAY_BINS);

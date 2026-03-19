@@ -3,14 +3,13 @@
 @init
 
 // Fill spectrum from ring buffer (helper function)
-function sff_fill_spec_from_ring(spec_base, in_ring_base) local(n, i, ri, ts) (
+function sff_fill_spec_from_ring(spec_base, in_ring_base) local(n, i, ri, ts, mask) (
   n = fft_size|0;
+  mask = fft_mask;
   i = 0;
   loop(n,
-    // Read backwards from current position to get the N most recent samples
-    // sff_ring_pos points to the next write position, so we read from (pos - n + i)
-    // Add n before modulo to ensure positive index
-    ri = (sff_ring_pos - n + i + n) % n;
+    // Oldest sample in window starts at sff_ring_pos.
+    ri = (sff_ring_pos + i) & mask;
     ts = in_ring_base[ri] * sff_window[i];
     sff_spec_set_re(spec_base, i, ts);
     sff_spec_set_im(spec_base, i, 0);
@@ -19,14 +18,14 @@ function sff_fill_spec_from_ring(spec_base, in_ring_base) local(n, i, ri, ts) (
 );
 
 // Build spectrum from ring buffer (LR or MS domain)
-function sff_build_spectrum_from_ring() local(n, i, ri, m, s, w) (
+function sff_build_spectrum_from_ring() local(n, i, ri, m, s, w, mask) (
   n = fft_size|0;
+  mask = fft_mask;
   ms_mode ? (
     // Spec L = Mid, Spec R = Side
     i = 0;
     loop(n,
-      // Read backwards from current position to get the N most recent samples
-      ri = (sff_ring_pos - n + i + n) % n;
+      ri = (sff_ring_pos + i) & mask;
       m = sff_stereo_avg(sff_in_ring_L[ri], sff_in_ring_R[ri]);
       s = 0.5 * (sff_in_ring_L[ri] - sff_in_ring_R[ri]);
       w = sff_window[i];

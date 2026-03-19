@@ -143,13 +143,13 @@ function flattery_process_sample() local(params_base, n, delay_read_pos, delayed
   n = fft_size|0;
   sff_in_ring_L[sff_ring_pos] = spl0;
   sff_in_ring_R[sff_ring_pos] = spl1;
-  sff_ring_pos = (sff_ring_pos + 1) % n;
+  sff_ring_pos = (sff_ring_pos + 1) & fft_mask;
 
   sff_dry_delay_L[sff_dry_write_pos] = spl0;
   sff_dry_delay_R[sff_dry_write_pos] = spl1;
-  sff_dry_write_pos = (sff_dry_write_pos + 1) % n;
+  sff_dry_write_pos = (sff_dry_write_pos + 1) & fft_mask;
 
-  delay_read_pos = (sff_dry_write_pos - 1 - sff_analysis_delay + n) % n;
+  delay_read_pos = (sff_dry_write_pos - 1 - sff_analysis_delay) & fft_mask;
   delayed_L = sff_dry_delay_L[delay_read_pos];
   delayed_R = sff_dry_delay_R[delay_read_pos];
 

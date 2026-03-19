@@ -112,14 +112,16 @@ function sff_compute_effective_radius(bin, radius) (
 // Compute smoothing delta for bin (mono/stereo)
 function sff_compute_delta_db_unified(mag_base, magL_base, magR_base, bin, radius, is_stereo) local(mag_lin, radius_eff, target_lin, delta) (
   mag_lin = sff_get_mag_value(mag_base, magL_base, magR_base, bin, is_stereo);
-  radius_eff = sff_compute_effective_radius(bin, radius);
-  target_lin = is_stereo
-    ? sff_neighbor_target_lin_stereo(magL_base, magR_base, bin, radius_eff)
-    : sff_neighbor_target_lin(mag_base, bin, radius_eff);
-  delta = sff_compute_base_delta(mag_lin, target_lin, bin);
-  // In amplify mode, invert the delta to amplify differences instead of reducing them
-  amplify_mode == 1 ? delta = -delta : 0;
-  sff_bin_is_active(bin, mag_lin) ? delta : 0;
+  sff_bin_is_active(bin, mag_lin) ? (
+    radius_eff = sff_compute_effective_radius(bin, radius);
+    target_lin = is_stereo
+      ? sff_neighbor_target_lin_stereo(magL_base, magR_base, bin, radius_eff)
+      : sff_neighbor_target_lin(mag_base, bin, radius_eff);
+    delta = sff_compute_base_delta(mag_lin, target_lin, bin);
+    // In amplify mode, invert the delta to amplify differences instead of reducing them
+    amplify_mode == 1 ? delta = -delta : 0;
+    delta;
+  ) : 0;
 );
 
 // Mono and linked-stereo entry-points
