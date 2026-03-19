@@ -45,11 +45,27 @@ function sff_ui_draw() local(i, j, k, x0, y0, w, h, v, db, y, y_base, avail_w, d
     // Determine which bin this pixel represents
     bin_start = max(pixel_bin|0, 0);
     
-    // Alternate based on bin index, not pixel index
+    // Estimate local bin width in pixels from bin progression over one pixel.
+    // Fade darker stripes toward the lighter gray once bands are below 4px.
+    next_norm_pos = min((i + 1) * draw_bins_inv, 1);
+    next_pixel_freq = sff_pos_to_freq(next_norm_pos, min_freq, max_freq);
+    next_pixel_bin = next_pixel_freq * bin_hz_inv;
+    bins_per_pixel = max(next_pixel_bin - pixel_bin, 0);
+    band_width_px = bins_per_pixel > 0 ? (1.0 / bins_per_pixel) : 9999;
+
+    // 1 at >=4px, 0 at 0px; drives dark-to-light blend.
+    opacity = sff_clamp(band_width_px * 0.25, 0, 1);
+
+    // Alternate based on bin index; even (dark) bins fade into light as width shrinks.
     (bin_start % 2) == 0 ? (
-      gfx_set(0.12, 0.12, 0.13, 1);  // Base background for even bins
+      gfx_set(
+        0.14 + (0.12 - 0.14) * opacity,
+        0.14 + (0.12 - 0.14) * opacity,
+        0.15 + (0.13 - 0.15) * opacity,
+        1
+      );
     ) : (
-      gfx_set(0.14, 0.14, 0.15, 1);  // Slightly lighter background for odd bins
+      gfx_set(0.14, 0.14, 0.15, 1);  // Light bins stay fixed
     );
     gfx_rect(x0 + SFF_UI_INNER_MARGIN + x_offset + i*bin_w, y0 + SFF_UI_INNER_MARGIN, bin_w, h - 4);
     i += 1;
@@ -119,10 +135,11 @@ function sff_ui_draw() local(i, j, k, x0, y0, w, h, v, db, y, y_base, avail_w, d
     ) : 0;
     
     // Draw smooth curve and filled area from previous point to current point
+    // Skip rendering if this FFT band is narrower than one pixel in UI space.
+    mag_x_dist = abs(mag_p2_x - mag_p1_x);
     mag_point_idx > 0 ? (
       // Calculate number of interpolation steps based on distance
       // Limit to at most 1 step per pixel, and ensure we don't exceed graph width
-      mag_x_dist = abs(mag_p2_x - mag_p1_x);
       mag_interp_steps = max((mag_x_dist)|0, 1);  // At least 1 step per pixel
       mag_interp_steps = min(mag_interp_steps, draw_bins);  // Never exceed graph width
       mag_interp_step_inv = 1.0 / mag_interp_steps;
