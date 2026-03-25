@@ -19,7 +19,8 @@ function sff_sync_params_to_globals(params_base) (
   ms_mode = sff_param_get_ms_mode(params_base);
   stereo_link = sff_param_get_stereo_link(params_base);
   neighbor_radius = sff_param_get_neighbor_radius(params_base);
-  neighbor_mode = sff_param_get_neighbor_mode(params_base);
+  // Neighbor detector is fixed to Median mode.
+  neighbor_mode = 1;
   amplify_mode = sff_param_get_amplify_mode(params_base);
   
   // Timing

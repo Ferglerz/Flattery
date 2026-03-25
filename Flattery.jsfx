@@ -18,7 +18,6 @@ slider6:flattery_output_gain_db=0<-12,12,0.01>Output Gain (dB)
 slider7:flattery_ms_mode=1<0,1,1{LR,MS}>Process Domain
 slider8:flattery_stereo_link=0<0,100,1>Stereo Link (%)
 slider9:flattery_neighbor_radius=1<1,12,1>-Radius (bins)
-slider10:flattery_neighbor_mode=1<0,1,1{Mean,Median}>Neighbor Mode
 slider11:flattery_amplify_mode=0<0,1,1{Reduce,Amplify}>Difference Mode
 
 // Timing

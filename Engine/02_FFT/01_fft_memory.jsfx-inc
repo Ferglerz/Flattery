@@ -61,9 +61,9 @@ function sff_allocate_memory() local(maxn, fft_buf_len, out_len, pos_bins, displ
   // Filter bank memory will be allocated after filter count is calculated
   // (allocated in sff_init_filter_bank after sff_init_filter_frequencies)
   sff_filter_freq_base = sff_mem_next;  // Reserve space for filter frequencies
-  // Max filters: ~10 octaves * 24 filters/octave = 240 filters max
-  // But with reduced below 300Hz, expect ~150-180 filters
-  sff_mem_next += 256;  // Reserve space for filter frequencies (over-allocate for safety)
+  // Reserve frequency table to hard memory cap.
+  // Runtime filter count can be lower (musical spacing + Nyquist cap).
+  sff_mem_next += SFF_FILTER_MEMORY_HARD_CAP;
 
   top = sff_mem_next;
   freembuf(top);

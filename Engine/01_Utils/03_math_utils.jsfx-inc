@@ -26,6 +26,17 @@ function sff_clamp_gain(db, max_boost, max_cut) (
 
 // Bin index/frequency conversion
 function sff_hz_to_bin(hz)   ( floor(hz / (bin_hz + eps)); );
+function sff_bin_center_hz(bin_idx) ( (bin_idx + 0.5) * bin_hz; );
+
+// Musical spacing helpers shared by filter-bank and FFT-bin thinning
+function sff_note_spacing_ratio(note_steps) (
+  pow(2, note_steps / SFF_NOTES_PER_OCTAVE);
+);
+
+function sff_keep_frequency_by_note_spacing(last_kept_hz, candidate_hz, note_steps) local(min_ratio) (
+  min_ratio = sff_note_spacing_ratio(max(note_steps, 0.01));
+  (last_kept_hz <= 0) || (candidate_hz >= (last_kept_hz * min_ratio));
+);
 
 // Snap frequency to nearest bin center
 function sff_snap_freq_to_bin_center(freq) local(bin_idx, bin_center, next_bin_center, prev_bin_center, dist_to_center, dist_to_next, dist_to_prev) (

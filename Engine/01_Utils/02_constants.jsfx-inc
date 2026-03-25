@@ -10,6 +10,11 @@ SFF_MAX_FFT_SIZE = 8192; // must be power of two; memory sized for this max
 SFF_MAX_MEDIAN_RADIUS = 25; // caps radius-aware median window
 SFF_MAX_MEDIAN_WIN = (SFF_MAX_MEDIAN_RADIUS * 2 + 1);
 
+// Filter-bank density and memory limits
+SFF_NOTES_PER_OCTAVE = 12;         // Equal-tempered semitones per octave
+SFF_MIN_FILTER_NOTE_SPACING = 0.25; // Quarter-tone minimum spacing
+SFF_FILTER_MEMORY_HARD_CAP = 1024; // Absolute max filters to bound memory
+
 // Display / UI (allocate for max FFT so UI can show all positive bins)
 SFF_MAX_DISPLAY_BINS = SFF_MAX_FFT_SIZE * 0.5;
 

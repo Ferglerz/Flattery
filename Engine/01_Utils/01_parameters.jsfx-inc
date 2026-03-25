@@ -63,7 +63,8 @@ function sff_params_from_sliders(params_base) (
   params_base[SFF_PARAM_MS_MODE] = flattery_ms_mode;
   params_base[SFF_PARAM_STEREO_LINK] = flattery_stereo_link;
   params_base[SFF_PARAM_NEIGHBOR_RADIUS] = flattery_neighbor_radius;
-  params_base[SFF_PARAM_NEIGHBOR_MODE] = flattery_neighbor_mode;
+  // Neighbor detector is fixed to Median mode.
+  params_base[SFF_PARAM_NEIGHBOR_MODE] = 1;
   params_base[SFF_PARAM_AMPLIFY_MODE] = flattery_amplify_mode;
   params_base[SFF_PARAM_ATTACK_MS] = flattery_attack_ms;
   params_base[SFF_PARAM_RELEASE_MS] = flattery_release_ms;

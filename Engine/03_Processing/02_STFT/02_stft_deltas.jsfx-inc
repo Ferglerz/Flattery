@@ -20,9 +20,15 @@ function sff_display_write_gain_db(bin, gain_db, is_right) (
 );
 
 // Compute gain deltas for all bins
-// Optimized: skips first and last bins, and bins with differences under 0.5dB
-function sff_compute_gain_deltas() local(k, radius, delta_L, delta_R, delta_link, abs_delta_L, abs_delta_R, abs_delta_link, start_bin, end_bin) (
+// Optimized: skips first/last bins, skips tiny deltas, and skips bins that are
+// closer than the configured musical spacing (quarter-tone by default).
+function sff_compute_gain_deltas() local(
+  k, radius, delta_L, delta_R, delta_link, abs_delta_L, abs_delta_R, abs_delta_link,
+  start_bin, end_bin, min_note_steps, last_kept_hz, bin_hz_center
+) (
   radius = 1;  // Hardcoded to 1 (Radius slider removed)
+  min_note_steps = max(SFF_MIN_FILTER_NOTE_SPACING, 0.01);
+  last_kept_hz = 0;
   
   // Update only the bins we actually draw.
   k = 0;
@@ -40,20 +46,28 @@ function sff_compute_gain_deltas() local(k, radius, delta_L, delta_R, delta_link
   end_bin = min(pos_bin_count - 2, high_cut_bin);
   k = start_bin;
   loop(max(0, end_bin - start_bin + 1),
-    // Compute deltas
-    delta_L = sff_compute_delta_db_for_bin(magL_base, k, radius);
-    delta_R = sff_compute_delta_db_for_bin(magR_base, k, radius);
-    delta_link = sff_compute_delta_db_for_bin_link(magL_base, magR_base, k, radius);
+    // Bin center frequency for musical spacing gate
+    bin_hz_center = sff_bin_center_hz(k);
     
-    // Check if absolute difference is under 0.5dB threshold
-    abs_delta_L = abs(delta_L);
-    abs_delta_R = abs(delta_R);
-    abs_delta_link = abs(delta_link);
-    
-    // Skip processing if difference is under 0.5dB
-    sff_delta_db_L[k] = abs_delta_L < 0.5 ? 0 : delta_L;
-    sff_delta_db_R[k] = abs_delta_R < 0.5 ? 0 : delta_R;
-    sff_delta_db_link[k] = abs_delta_link < 0.5 ? 0 : delta_link;
+    // Keep the first eligible bin, then enforce minimum note spacing.
+    sff_keep_frequency_by_note_spacing(last_kept_hz, bin_hz_center, min_note_steps) ? (
+      // Compute deltas
+      delta_L = sff_compute_delta_db_for_bin(magL_base, k, radius);
+      delta_R = sff_compute_delta_db_for_bin(magR_base, k, radius);
+      delta_link = sff_compute_delta_db_for_bin_link(magL_base, magR_base, k, radius);
+      
+      // Check if absolute difference is under 0.5dB threshold
+      abs_delta_L = abs(delta_L);
+      abs_delta_R = abs(delta_R);
+      abs_delta_link = abs(delta_link);
+      
+      // Skip processing if difference is under 0.5dB
+      sff_delta_db_L[k] = abs_delta_L < 0.5 ? 0 : delta_L;
+      sff_delta_db_R[k] = abs_delta_R < 0.5 ? 0 : delta_R;
+      sff_delta_db_link[k] = abs_delta_link < 0.5 ? 0 : delta_link;
+      
+      last_kept_hz = bin_hz_center;
+    ) : 0;
     
     k += 1;
   );

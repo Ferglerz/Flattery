@@ -6,24 +6,32 @@
 // Filter bank constants
 SFF_FILTER_MIN_HZ = 20;      // Minimum filter frequency
 SFF_FILTER_MAX_HZ = 18000;   // Maximum filter frequency (cap to save CPU)
-SFF_FILTERS_PER_OCTAVE = 24; // Maximum filters per octave (quarter-tone resolution)
 
-// Calculate minimum frequency spacing to maintain max filters per octave
-// At frequency f, minimum spacing = f * (2^(1/24) - 1) to maintain 24 per octave
-function sff_min_filter_spacing(freq) local(ratio) (
-  ratio = pow(2, 1.0 / SFF_FILTERS_PER_OCTAVE);  // 2^(1/24)
-  freq * (ratio - 1);  // Minimum spacing at this frequency
+// Theoretical count of equally-spaced notes between min_hz and nyquist
+// using the configured musical spacing (e.g. 0.25 note = quarter-tone).
+function sff_theoretical_filter_cap(min_hz, nyq_hz, note_steps) local(steps_per_oct, octs, raw_cap) (
+  (min_hz > 0 && nyq_hz > min_hz) ? (
+    steps_per_oct = SFF_NOTES_PER_OCTAVE / max(note_steps, 0.01);
+    octs = log(nyq_hz / min_hz) / log(2);
+    raw_cap = floor(octs * steps_per_oct) + 1;
+    max(1, raw_cap);
+  ) : 1;
 );
 
-// Calculate filter center frequencies - one per bin, respecting 24 per octave limit
-function sff_init_filter_frequencies() local(i, bin_idx, bin_freq, last_filter_freq, min_spacing, filter_idx) (
+// Calculate filter center frequencies - one per bin, then thin by musical spacing.
+// If adjacent candidates are closer than the configured note spacing, the newer one is skipped.
+function sff_init_filter_frequencies() local(i, bin_idx, bin_freq, last_filter_freq, filter_idx, min_note_steps, nyq_hz, mus_cap) (
   // Set filter frequency array base
   sff_filter_freq = sff_filter_freq_base;
   
   filter_idx = 0;
   last_filter_freq = 0;  // Track last filter frequency to enforce spacing
+  min_note_steps = max(SFF_MIN_FILTER_NOTE_SPACING, 0.01);
+  nyq_hz = 0.5 * srate;
+  mus_cap = sff_theoretical_filter_cap(SFF_FILTER_MIN_HZ, nyq_hz, min_note_steps);
+  mus_cap = min(mus_cap, SFF_FILTER_MEMORY_HARD_CAP);
   
-  // Iterate through all bins, creating one filter per bin when spacing allows
+  // Iterate through all bins, creating one filter per bin when musical spacing allows
   i = 0;
   loop(pos_bin_count,
     bin_idx = i;
@@ -34,9 +42,11 @@ function sff_init_filter_frequencies() local(i, bin_idx, bin_freq, last_filter_f
     
     // Only create filters within valid frequency range
     (bin_freq >= SFF_FILTER_MIN_HZ && bin_freq <= SFF_FILTER_MAX_HZ) ? (
-      // Check if we can add a filter at this bin's center frequency
-      // (first filter always allowed, or if spacing is sufficient)
-      filter_idx == 0 || (bin_freq - last_filter_freq) >= sff_min_filter_spacing(last_filter_freq) ? (
+      // Check if we can add a filter at this bin's center frequency.
+      // First filter is always allowed; after that, enforce octave/note spacing.
+      // This naturally thins dense regions (equivalent to dropping every other
+      // candidate until the minimum musical spacing is met again).
+      (filter_idx < mus_cap) && sff_keep_frequency_by_note_spacing(last_filter_freq, bin_freq, min_note_steps) ? (
         // Add filter at this bin's center frequency
         sff_filter_freq[filter_idx] = bin_freq;
         last_filter_freq = bin_freq;
@@ -49,12 +59,12 @@ function sff_init_filter_frequencies() local(i, bin_idx, bin_freq, last_filter_f
   // Update actual count
   sff_filter_count = filter_idx;
   
-  // Ensure we have at least a few filters
-  sff_filter_count = max(sff_filter_count, 8);
+  // Hard cap to reserved frequency buffer size
+  sff_filter_count = min(sff_filter_count, SFF_FILTER_MEMORY_HARD_CAP);
   
   // Clear filter frequencies beyond active count to prevent stale data
   // Critical when downsizing FFT: old frequencies could cause incorrect mapping
-  memset(sff_filter_freq + sff_filter_count, 0, (256 - sff_filter_count));
+  memset(sff_filter_freq + sff_filter_count, 0, (SFF_FILTER_MEMORY_HARD_CAP - sff_filter_count));
 );
 
 // Map filter index to FFT bin

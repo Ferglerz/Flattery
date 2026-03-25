@@ -79,16 +79,12 @@ function sff_weighted_mean_neighbors(mag_base, magL_base, magR_base, bin, radius
     : sff_get_mag_value(mag_base, magL_base, magR_base, bin, is_stereo);
 );
 
-// Get mono/stereo neighbor target depending on mode
+// Get mono/stereo neighbor target (fixed Median mode)
 function sff_neighbor_target_lin(mag_base, bin, radius) (
-  neighbor_mode==1
-    ? sff_median_target_lin(mag_base, bin, radius)
-    : sff_weighted_mean_neighbors(mag_base, 0, 0, bin, radius, 0)
+  sff_median_target_lin(mag_base, bin, radius);
 );
 function sff_neighbor_target_lin_stereo(magL_base, magR_base, bin, radius) (
-  neighbor_mode==1
-    ? sff_median_target_lin_stereo(magL_base, magR_base, bin, radius)
-    : sff_weighted_mean_neighbors(0, magL_base, magR_base, bin, radius, 1)
+  sff_median_target_lin_stereo(magL_base, magR_base, bin, radius);
 );
 
 // Bin is active if within cutoff range and operate range

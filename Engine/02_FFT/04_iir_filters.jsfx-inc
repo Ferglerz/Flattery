@@ -14,7 +14,7 @@ function sff_init_filter_bank() local(i, n_filters, top) (
   // Allocate filter state memory (after filter frequencies)
   // Each filter: 4 state vars per channel (x1, x2, y1, y2)
   // Left and right channels separate
-  sff_filter_state_L = sff_filter_freq_base + 256;  // After frequency array
+  sff_filter_state_L = sff_filter_freq_base + SFF_FILTER_MEMORY_HARD_CAP;  // After frequency array
   sff_filter_state_R = sff_filter_state_L + n_filters * 4;
   
   // Allocate filter coefficients
