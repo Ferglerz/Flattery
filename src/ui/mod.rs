@@ -78,6 +78,33 @@ pub struct FlatteryView {
     edit: Option<ValueEdit<KnobId>>,
 }
 
+const ALL_KNOBS: &[KnobId] = &[
+    KnobId::StrengthBoost,
+    KnobId::StrengthCut,
+    KnobId::MaxBoost,
+    KnobId::MaxCut,
+    KnobId::OutputGain,
+    KnobId::Attack,
+    KnobId::Release,
+    KnobId::InputRms,
+    KnobId::MinOperate,
+    KnobId::MaxOperate,
+    KnobId::StereoLink,
+    KnobId::TiltAmount,
+    KnobId::TiltFreq,
+    KnobId::LowCut,
+    KnobId::HighCut,
+    KnobId::NeighborRadius,
+];
+
+fn fmt_hz(f: f32) -> String {
+    if f >= 1000.0 {
+        format!("{:.1}k", f / 1000.0)
+    } else {
+        format!("{:.0}Hz", f)
+    }
+}
+
 impl FlatteryView {
     pub fn param(&self, id: KnobId) -> &FloatParam {
         match id {
@@ -236,33 +263,9 @@ impl FlatteryView {
                 format!("{:.0}%", self.params.tilt.value()),
                 rgb(240, 80, 150),
             ),
-            KnobId::TiltFreq => {
-                let f = self.params.tilt_freq_hz.value();
-                let s = if f >= 1000.0 {
-                    format!("{:.1}k", f / 1000.0)
-                } else {
-                    format!("{:.0}Hz", f)
-                };
-                ("TILT FREQ", s, rgb(240, 80, 150))
-            }
-            KnobId::LowCut => {
-                let f = self.params.low_cut_hz.value();
-                let s = if f >= 1000.0 {
-                    format!("{:.1}k", f / 1000.0)
-                } else {
-                    format!("{:.0}Hz", f)
-                };
-                ("LOW CUT", s, rgb(235, 95, 95))
-            }
-            KnobId::HighCut => {
-                let f = self.params.high_cut_hz.value();
-                let s = if f >= 1000.0 {
-                    format!("{:.1}k", f / 1000.0)
-                } else {
-                    format!("{:.0}Hz", f)
-                };
-                ("HIGH CUT", s, rgb(95, 220, 120))
-            }
+            KnobId::TiltFreq => ("TILT FREQ", fmt_hz(self.params.tilt_freq_hz.value()), rgb(240, 80, 150)),
+            KnobId::LowCut => ("LOW CUT", fmt_hz(self.params.low_cut_hz.value()), rgb(235, 95, 95)),
+            KnobId::HighCut => ("HIGH CUT", fmt_hz(self.params.high_cut_hz.value()), rgb(95, 220, 120)),
         }
     }
 
@@ -449,24 +452,7 @@ impl View for FlatteryView {
                     }
 
                     // Knobs hit testing
-                    for id in [
-                        KnobId::StrengthBoost,
-                        KnobId::StrengthCut,
-                        KnobId::MaxBoost,
-                        KnobId::MaxCut,
-                        KnobId::OutputGain,
-                        KnobId::Attack,
-                        KnobId::Release,
-                        KnobId::InputRms,
-                        KnobId::MinOperate,
-                        KnobId::MaxOperate,
-                        KnobId::StereoLink,
-                        KnobId::TiltAmount,
-                        KnobId::TiltFreq,
-                        KnobId::LowCut,
-                        KnobId::HighCut,
-                        KnobId::NeighborRadius,
-                    ] {
+                    for &id in ALL_KNOBS {
                         let r = Self::knob_rect(id);
                         if Self::inside(mouse_x, mouse_y, r) {
                             self.drag = Some(DragState::Knob {
@@ -481,24 +467,7 @@ impl View for FlatteryView {
                 }
 
                 WindowEvent::MouseDoubleClick(MouseButton::Left) => {
-                    for id in [
-                        KnobId::StrengthBoost,
-                        KnobId::StrengthCut,
-                        KnobId::MaxBoost,
-                        KnobId::MaxCut,
-                        KnobId::OutputGain,
-                        KnobId::Attack,
-                        KnobId::Release,
-                        KnobId::InputRms,
-                        KnobId::MinOperate,
-                        KnobId::MaxOperate,
-                        KnobId::StereoLink,
-                        KnobId::TiltAmount,
-                        KnobId::TiltFreq,
-                        KnobId::LowCut,
-                        KnobId::HighCut,
-                        KnobId::NeighborRadius,
-                    ] {
+                    for &id in ALL_KNOBS {
                         let r = Self::knob_rect(id);
                         if Self::inside(mouse_x, mouse_y, r) {
                             let (_, val_str, _) = self.knob_info(id);
@@ -591,14 +560,14 @@ impl View for FlatteryView {
                 .set(canvas.add_font_mem(FONT_JETBRAINS_MONO).ok());
         }
 
-        let mut d = Draw {
-            light: prefs().light(),
-            c: canvas,
-            s: bounds.w / 1040.0,
-            ox: bounds.x,
-            oy: bounds.y,
-            font: self.font.get(),
-        };
+        let mut d = Draw::new(
+            canvas,
+            prefs().light(),
+            bounds.w / 1040.0,
+            bounds.x,
+            bounds.y,
+            self.font.get(),
+        );
 
         // Window background
         d.rect(0.0, 0.0, 1040.0, 700.0, BG);
@@ -656,24 +625,7 @@ impl View for FlatteryView {
         );
 
         // Draw bottom parameter cards
-        for id in [
-            KnobId::StrengthBoost,
-            KnobId::StrengthCut,
-            KnobId::MaxBoost,
-            KnobId::MaxCut,
-            KnobId::OutputGain,
-            KnobId::Attack,
-            KnobId::Release,
-            KnobId::InputRms,
-            KnobId::MinOperate,
-            KnobId::MaxOperate,
-            KnobId::StereoLink,
-            KnobId::TiltAmount,
-            KnobId::TiltFreq,
-            KnobId::LowCut,
-            KnobId::HighCut,
-            KnobId::NeighborRadius,
-        ] {
+        for &id in ALL_KNOBS {
             let r = Self::knob_rect(id);
             let (label, val_str, color) = self.knob_info(id);
             let n = self.get_knob_norm(id);
