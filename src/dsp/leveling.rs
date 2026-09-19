@@ -82,6 +82,8 @@ impl LevelingProcessor {
         attack_ms: f64,
         release_ms: f64,
         frame_dt: f64,
+        boost_weights: &[f64],
+        cut_weights: &[f64],
     ) {
         self.resize(pos_bin_count);
         let link_factor = (stereo_link_pct * 0.01).clamp(0.0, 1.0);
@@ -155,20 +157,22 @@ impl LevelingProcessor {
             let eff_delta_l = delta_l * (1.0 - link_factor) + delta_link * link_factor;
             let eff_delta_r = delta_r * (1.0 - link_factor) + delta_link * link_factor;
 
+            let boost_w = boost_weights.get(k).copied().unwrap_or(1.0).clamp(0.0, 1.0);
+            let cut_w = cut_weights.get(k).copied().unwrap_or(1.0).clamp(0.0, 1.0);
             let scale_l = if eff_delta_l > 0.0 {
-                boost_factor
+                boost_factor * boost_w
             } else {
-                cut_factor
+                cut_factor * cut_w
             };
             let scale_r = if eff_delta_r > 0.0 {
-                boost_factor
+                boost_factor * boost_w
             } else {
-                cut_factor
+                cut_factor * cut_w
             };
             let scale_link = if delta_link > 0.0 {
-                boost_factor
+                boost_factor * boost_w
             } else {
-                cut_factor
+                cut_factor * cut_w
             };
 
             let target_gain_l = (eff_delta_l * scale_l).clamp(-max_cut_db, max_boost_db);

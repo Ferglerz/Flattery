@@ -9,9 +9,10 @@ use crate::{
         tilt::{apply_tilt_compensation, calculate_tilt_multiplier_scaled},
     },
     params::{DifferenceMode, FlatteryParams, ProcessDomain},
+    strength::{fill_bin_weights, StrengthNode},
 };
 use pleasant_ui::math::{db_to_linear, linear_to_db};
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::{atomic::Ordering, Arc, Mutex};
 
 pub struct Engine {
     pub shared: Arc<Shared>,
@@ -30,6 +31,8 @@ pub struct Engine {
     window_samples_l: Vec<f64>,
     window_samples_r: Vec<f64>,
     target_gains: Vec<f64>,
+    boost_weights: Vec<f64>,
+    cut_weights: Vec<f64>,
 }
 
 impl Engine {
@@ -58,6 +61,8 @@ impl Engine {
             window_samples_l: vec![0.0; MAX_FFT_SIZE],
             window_samples_r: vec![0.0; MAX_FFT_SIZE],
             target_gains: vec![1.0; 1024],
+            boost_weights: vec![1.0; 1024],
+            cut_weights: vec![1.0; 1024],
         }
     }
 
@@ -160,6 +165,29 @@ impl Engine {
             let att_ms = params.attack_ms.value() as f64;
             let rel_ms = params.release_ms.value() as f64;
 
+            if self.boost_weights.len() < half {
+                self.boost_weights.resize(half, 1.0);
+                self.cut_weights.resize(half, 1.0);
+            }
+            let boost_nodes = snapshot_nodes(&params.boost_nodes);
+            let cut_nodes = snapshot_nodes(&params.cut_nodes);
+            fill_bin_weights(
+                &boost_nodes,
+                half,
+                bin_hz,
+                10.0,
+                22050.0,
+                &mut self.boost_weights,
+            );
+            fill_bin_weights(
+                &cut_nodes,
+                half,
+                bin_hz,
+                10.0,
+                22050.0,
+                &mut self.cut_weights,
+            );
+
             self.leveler.process(
                 &self.analyzer.mag_l,
                 &self.analyzer.mag_r,
@@ -178,6 +206,8 @@ impl Engine {
                 att_ms,
                 rel_ms,
                 frame_dt,
+                &self.boost_weights[..half],
+                &self.cut_weights[..half],
             );
 
             // Map leveler gains to filter bank
@@ -249,5 +279,12 @@ impl Engine {
         let (wet_l, wet_r) = self.filter_bank.process(delayed_l, delayed_r);
         let out_gain = db_to_linear(output_gain_db);
         (wet_l * out_gain, wet_r * out_gain)
+    }
+}
+
+fn snapshot_nodes(nodes: &Mutex<Vec<StrengthNode>>) -> Vec<StrengthNode> {
+    match nodes.lock() {
+        Ok(guard) => guard.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
     }
 }

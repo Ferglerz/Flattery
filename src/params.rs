@@ -48,13 +48,20 @@ pub enum DifferenceMode {
     Amplify,
 }
 
+use crate::strength::StrengthNode;
 use nih_plug_vizia::ViziaState;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[derive(Params)]
 pub struct FlatteryParams {
     #[persist = "editor-state"]
     pub editor_state: Arc<ViziaState>,
+
+    #[persist = "boost-nodes"]
+    pub boost_nodes: Arc<Mutex<Vec<StrengthNode>>>,
+
+    #[persist = "cut-nodes"]
+    pub cut_nodes: Arc<Mutex<Vec<StrengthNode>>>,
 
     #[id = "fft_size"]
     pub fft_size: EnumParam<FftSize>,
@@ -120,7 +127,9 @@ pub struct FlatteryParams {
 impl Default for FlatteryParams {
     fn default() -> Self {
         Self {
-            editor_state: ViziaState::new(|| (1040, 700)),
+            editor_state: ViziaState::new(|| (1040, 600)),
+            boost_nodes: Arc::new(Mutex::new(Vec::new())),
+            cut_nodes: Arc::new(Mutex::new(Vec::new())),
             fft_size: EnumParam::new("FFT Size", FftSize::Fft512),
 
             strength_boost: FloatParam::new(

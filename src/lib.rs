@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 pub mod dsp;
 pub mod params;
+pub mod strength;
 pub mod ui;
 
 use dsp::{Engine, Shared};

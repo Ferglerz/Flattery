@@ -8,6 +8,7 @@ use flattery::{
     },
     params::FlatteryParams,
 };
+use nih_plug::prelude::Params;
 use pleasant_ui::math::{flattery_freq_to_pos, flattery_pos_to_freq};
 use std::sync::Arc;
 
@@ -117,4 +118,32 @@ fn test_engine_audio_stream_no_nans() {
         assert!(out_l.is_finite(), "Sample {i} produced non-finite L: {out_l}");
         assert!(out_r.is_finite(), "Sample {i} produced non-finite R: {out_r}");
     }
+}
+
+#[test]
+fn strength_nodes_round_trip_in_host_state() {
+    use flattery::strength::StrengthNode;
+
+    let params = FlatteryParams::default();
+    params.boost_nodes.lock().unwrap().push(StrengthNode {
+        id: 3,
+        freq: 1234.0,
+        weight: 0.4,
+    });
+    params.cut_nodes.lock().unwrap().push(StrengthNode {
+        id: 7,
+        freq: 8000.0,
+        weight: 0.1,
+    });
+    let fields = params.serialize_fields();
+    let restored = FlatteryParams::default();
+    restored.deserialize_fields(&fields);
+    assert_eq!(
+        *params.boost_nodes.lock().unwrap(),
+        *restored.boost_nodes.lock().unwrap()
+    );
+    assert_eq!(
+        *params.cut_nodes.lock().unwrap(),
+        *restored.cut_nodes.lock().unwrap()
+    );
 }
