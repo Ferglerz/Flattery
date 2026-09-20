@@ -68,7 +68,8 @@ impl LevelingProcessor {
         mag_l: &[f64],
         mag_r: &[f64],
         pos_bin_count: usize,
-        radius: usize,
+        boost_radii: &[usize],
+        cut_radii: &[usize],
         amplify_mode: bool,
         stereo_link_pct: f64,
         strength_boost: f64,
@@ -99,8 +100,10 @@ impl LevelingProcessor {
         for k in 0..pos_bin_count {
             if k < start || k > end {
                 // Decay to 0 dB
-                self.smoothed_gain_db_l[k] += (0.0 - self.smoothed_gain_db_l[k]) * (1.0 - rel_coeff);
-                self.smoothed_gain_db_r[k] += (0.0 - self.smoothed_gain_db_r[k]) * (1.0 - rel_coeff);
+                self.smoothed_gain_db_l[k] +=
+                    (0.0 - self.smoothed_gain_db_l[k]) * (1.0 - rel_coeff);
+                self.smoothed_gain_db_r[k] +=
+                    (0.0 - self.smoothed_gain_db_r[k]) * (1.0 - rel_coeff);
                 self.smoothed_gain_db_link[k] +=
                     (0.0 - self.smoothed_gain_db_link[k]) * (1.0 - rel_coeff);
                 continue;
@@ -114,8 +117,36 @@ impl LevelingProcessor {
             let active_r = mr >= min_operate_lin && mr <= max_operate_lin;
             let active_avg = m_avg >= min_operate_lin && m_avg <= max_operate_lin;
 
-            let target_l = self.collect_neighbor_median_target(mag_l, k, radius);
-            let target_r = self.collect_neighbor_median_target(mag_r, k, radius);
+            let r_b = boost_radii.get(k).copied().unwrap_or(1).clamp(1, 12);
+            let r_c = cut_radii.get(k).copied().unwrap_or(1).clamp(1, 12);
+
+            let (target_l, target_r) = if r_b == r_c {
+                (
+                    self.collect_neighbor_median_target(mag_l, k, r_b),
+                    self.collect_neighbor_median_target(mag_r, k, r_b),
+                )
+            } else {
+                let tb_l = self.collect_neighbor_median_target(mag_l, k, r_b);
+                let tc_l = self.collect_neighbor_median_target(mag_l, k, r_c);
+                let tl = if tb_l > ml {
+                    tb_l
+                } else if tc_l < ml {
+                    tc_l
+                } else {
+                    ml
+                };
+
+                let tb_r = self.collect_neighbor_median_target(mag_r, k, r_b);
+                let tc_r = self.collect_neighbor_median_target(mag_r, k, r_c);
+                let tr = if tb_r > mr {
+                    tb_r
+                } else if tc_r < mr {
+                    tc_r
+                } else {
+                    mr
+                };
+                (tl, tr)
+            };
 
             let mut delta_l = if active_l {
                 linear_to_db(target_l / (ml + 1e-9))
@@ -157,8 +188,8 @@ impl LevelingProcessor {
             let eff_delta_l = delta_l * (1.0 - link_factor) + delta_link * link_factor;
             let eff_delta_r = delta_r * (1.0 - link_factor) + delta_link * link_factor;
 
-            let boost_w = boost_weights.get(k).copied().unwrap_or(1.0).clamp(0.0, 1.0);
-            let cut_w = cut_weights.get(k).copied().unwrap_or(1.0).clamp(0.0, 1.0);
+            let boost_w = boost_weights.get(k).copied().unwrap_or(1.0).clamp(0.0, 8.0);
+            let cut_w = cut_weights.get(k).copied().unwrap_or(1.0).clamp(0.0, 8.0);
             let scale_l = if eff_delta_l > 0.0 {
                 boost_factor * boost_w
             } else {
@@ -196,8 +227,10 @@ impl LevelingProcessor {
                 rel_coeff
             };
 
-            self.smoothed_gain_db_l[k] += (target_gain_l - self.smoothed_gain_db_l[k]) * (1.0 - c_l);
-            self.smoothed_gain_db_r[k] += (target_gain_r - self.smoothed_gain_db_r[k]) * (1.0 - c_r);
+            self.smoothed_gain_db_l[k] +=
+                (target_gain_l - self.smoothed_gain_db_l[k]) * (1.0 - c_l);
+            self.smoothed_gain_db_r[k] +=
+                (target_gain_r - self.smoothed_gain_db_r[k]) * (1.0 - c_r);
             self.smoothed_gain_db_link[k] +=
                 (target_gain_link - self.smoothed_gain_db_link[k]) * (1.0 - c_link);
         }

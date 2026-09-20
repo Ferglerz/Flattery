@@ -9,9 +9,12 @@ use crate::{
         tilt::{apply_tilt_compensation, calculate_tilt_multiplier_scaled},
     },
     params::{DifferenceMode, FlatteryParams, ProcessDomain},
-    strength::{fill_bin_weights, StrengthNode},
+    strength::{fill_bin_radii, fill_bin_weights, StrengthNode},
 };
-use pleasant_ui::math::{db_to_linear, linear_to_db};
+use pleasant_ui::{
+    math::{db_to_linear, linear_to_db},
+    spectrum::{peak_hold, spectrum_fall_db},
+};
 use std::sync::{atomic::Ordering, Arc, Mutex};
 
 pub struct Engine {
@@ -33,6 +36,8 @@ pub struct Engine {
     target_gains: Vec<f64>,
     boost_weights: Vec<f64>,
     cut_weights: Vec<f64>,
+    boost_radii: Vec<usize>,
+    cut_radii: Vec<usize>,
 }
 
 impl Engine {
@@ -63,6 +68,8 @@ impl Engine {
             target_gains: vec![1.0; 1024],
             boost_weights: vec![1.0; 1024],
             cut_weights: vec![1.0; 1024],
+            boost_radii: vec![1; 1024],
+            cut_radii: vec![1; 1024],
         }
     }
 
@@ -75,6 +82,9 @@ impl Engine {
         self.leveler.reset();
         self.filter_bank.reset();
         self.hop_counter = 0;
+        if let Ok(mut lock) = self.shared.spectrum_mags_db.try_write() {
+            lock.fill(-120.0);
+        }
     }
 
     pub fn latency(&self) -> u32 {
@@ -90,7 +100,8 @@ impl Engine {
         self.analysis_delay = self.hop_size;
         self.hop_counter = 0;
         self.analyzer.resize(new_size);
-        self.filter_bank.init_frequencies(new_size, self.sample_rate);
+        self.filter_bank
+            .init_frequencies(new_size, self.sample_rate);
         self.shared.fft_size.store(new_size, Ordering::Relaxed);
     }
 
@@ -135,10 +146,8 @@ impl Engine {
             let bin_hz = self.sample_rate / n as f64;
             let frame_dt = self.hop_size as f64 / self.sample_rate;
 
-            self.ring_l
-                .read_window(n, &mut self.window_samples_l[..n]);
-            self.ring_r
-                .read_window(n, &mut self.window_samples_r[..n]);
+            self.ring_l.read_window(n, &mut self.window_samples_l[..n]);
+            self.ring_r.read_window(n, &mut self.window_samples_r[..n]);
 
             let is_ms = params.ms_mode.value() == ProcessDomain::MS;
             let input_rms_ms = params.input_rms_ms.value() as f64;
@@ -160,7 +169,7 @@ impl Engine {
             let str_boost = params.strength_boost.value() as f64;
             let str_cut = params.strength_cut.value() as f64;
             let stereo_link = params.stereo_link.value() as f64;
-            let radius = params.neighbor_radius.value() as usize;
+            let default_radius = params.neighbor_radius.value() as usize;
             let amplify = params.amplify_mode.value() == DifferenceMode::Amplify;
             let att_ms = params.attack_ms.value() as f64;
             let rel_ms = params.release_ms.value() as f64;
@@ -168,6 +177,8 @@ impl Engine {
             if self.boost_weights.len() < half {
                 self.boost_weights.resize(half, 1.0);
                 self.cut_weights.resize(half, 1.0);
+                self.boost_radii.resize(half, 1);
+                self.cut_radii.resize(half, 1);
             }
             let boost_nodes = snapshot_nodes(&params.boost_nodes);
             let cut_nodes = snapshot_nodes(&params.cut_nodes);
@@ -187,12 +198,27 @@ impl Engine {
                 22050.0,
                 &mut self.cut_weights,
             );
+            fill_bin_radii(
+                &boost_nodes,
+                half,
+                bin_hz,
+                default_radius,
+                &mut self.boost_radii,
+            );
+            fill_bin_radii(
+                &cut_nodes,
+                half,
+                bin_hz,
+                default_radius,
+                &mut self.cut_radii,
+            );
 
             self.leveler.process(
                 &self.analyzer.mag_l,
                 &self.analyzer.mag_r,
                 half,
-                radius,
+                &self.boost_radii[..half],
+                &self.cut_radii[..half],
                 amplify,
                 stereo_link,
                 str_boost,
@@ -256,12 +282,17 @@ impl Engine {
                 high_cut_hz,
             );
 
-            // Update UI telemetry lock-free
+            // Update UI telemetry lock-free. Peak-hold matches Damian Channel Strip.
             if let Ok(mut lock) = self.shared.spectrum_mags_db.try_write() {
-                lock.clear();
+                if lock.len() != half {
+                    lock.clear();
+                    lock.resize(half, -120.0);
+                }
+                let fall = spectrum_fall_db(self.hop_size as f32);
                 for k in 0..half {
                     let avg = 0.5 * (self.analyzer.mag_l[k] + self.analyzer.mag_r[k]);
-                    lock.push(linear_to_db(avg) as f32);
+                    let db = linear_to_db(avg) as f32;
+                    lock[k] = peak_hold(lock[k], db, fall);
                 }
             }
             if let Ok(mut lock) = self.shared.filter_display.try_write() {

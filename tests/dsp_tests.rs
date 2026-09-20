@@ -3,7 +3,9 @@ use flattery::{
         biquad::PeakingFilter,
         filter_bank::FilterBank,
         ring_buffer::{AnalysisRing, DelayLine},
-        tilt::{apply_tilt_compensation, calculate_tilt_multiplier, calculate_tilt_multiplier_scaled},
+        tilt::{
+            apply_tilt_compensation, calculate_tilt_multiplier, calculate_tilt_multiplier_scaled,
+        },
         Engine, Shared,
     },
     params::FlatteryParams,
@@ -115,8 +117,14 @@ fn test_engine_audio_stream_no_nans() {
     for i in 0..1024 {
         let input = if i == 0 { 1.0 } else { 0.0 };
         let (out_l, out_r) = engine.tick(input, input, &params);
-        assert!(out_l.is_finite(), "Sample {i} produced non-finite L: {out_l}");
-        assert!(out_r.is_finite(), "Sample {i} produced non-finite R: {out_r}");
+        assert!(
+            out_l.is_finite(),
+            "Sample {i} produced non-finite L: {out_l}"
+        );
+        assert!(
+            out_r.is_finite(),
+            "Sample {i} produced non-finite R: {out_r}"
+        );
     }
 }
 
@@ -125,16 +133,16 @@ fn strength_nodes_round_trip_in_host_state() {
     use flattery::strength::StrengthNode;
 
     let params = FlatteryParams::default();
-    params.boost_nodes.lock().unwrap().push(StrengthNode {
-        id: 3,
-        freq: 1234.0,
-        weight: 0.4,
-    });
-    params.cut_nodes.lock().unwrap().push(StrengthNode {
-        id: 7,
-        freq: 8000.0,
-        weight: 0.1,
-    });
+    params
+        .boost_nodes
+        .lock()
+        .unwrap()
+        .push(StrengthNode::new(3, 1234.0, 0.4));
+    params
+        .cut_nodes
+        .lock()
+        .unwrap()
+        .push(StrengthNode::new(7, 8000.0, 0.1));
     let fields = params.serialize_fields();
     let restored = FlatteryParams::default();
     restored.deserialize_fields(&fields);
@@ -146,4 +154,94 @@ fn strength_nodes_round_trip_in_host_state() {
         *params.cut_nodes.lock().unwrap(),
         *restored.cut_nodes.lock().unwrap()
     );
+}
+
+#[test]
+fn test_quantize_time_ms_stepping() {
+    use flattery::ui::quantize_time_ms;
+
+    // Under 10ms: 0.1ms increments
+    assert_eq!(quantize_time_ms(0.12), 0.1);
+    assert_eq!(quantize_time_ms(1.56), 1.6);
+    assert_eq!(quantize_time_ms(9.94), 9.9);
+    assert_eq!(quantize_time_ms(10.0), 10.0);
+
+    // Over 10ms (10-25ms): 1ms increments
+    assert_eq!(quantize_time_ms(10.4), 10.0);
+    assert_eq!(quantize_time_ms(10.6), 11.0);
+    assert_eq!(quantize_time_ms(24.8), 25.0);
+
+    // Over 25ms (25-50ms): 5ms increments
+    assert_eq!(quantize_time_ms(26.0), 25.0);
+    assert_eq!(quantize_time_ms(28.0), 30.0);
+    assert_eq!(quantize_time_ms(47.0), 45.0);
+    assert_eq!(quantize_time_ms(48.0), 50.0);
+
+    // Over 50ms (50-100ms): 10ms increments
+    assert_eq!(quantize_time_ms(54.0), 50.0);
+    assert_eq!(quantize_time_ms(56.0), 60.0);
+    assert_eq!(quantize_time_ms(94.0), 90.0);
+    assert_eq!(quantize_time_ms(96.0), 100.0);
+
+    // Over 100ms (100-200ms): 25ms increments
+    assert_eq!(quantize_time_ms(110.0), 100.0);
+    assert_eq!(quantize_time_ms(115.0), 125.0);
+    assert_eq!(quantize_time_ms(190.0), 200.0);
+
+    // Over 200ms (200-500ms): 50ms increments
+    assert_eq!(quantize_time_ms(220.0), 200.0);
+    assert_eq!(quantize_time_ms(230.0), 250.0);
+    assert_eq!(quantize_time_ms(480.0), 500.0);
+
+    // Over 500ms: 100ms increments
+    assert_eq!(quantize_time_ms(540.0), 500.0);
+    assert_eq!(quantize_time_ms(560.0), 600.0);
+    assert_eq!(quantize_time_ms(1980.0), 2000.0);
+}
+
+#[test]
+fn test_per_node_radius_interpolation() {
+    use flattery::strength::{fill_bin_radii, radius_at, StrengthNode};
+
+    // 0 nodes -> default radius everywhere
+    let nodes: Vec<StrengthNode> = Vec::new();
+    assert_eq!(radius_at(&nodes, 100.0, 3), 3.0);
+    assert_eq!(radius_at(&nodes, 5000.0, 3), 3.0);
+
+    // 1 node -> holds that node's radius everywhere
+    let mut n1 = StrengthNode::new(1, 1000.0, 1.0);
+    n1.radius = 6;
+    let single = vec![n1];
+    assert_eq!(radius_at(&single, 100.0, 1), 6.0);
+    assert_eq!(radius_at(&single, 1000.0, 1), 6.0);
+    assert_eq!(radius_at(&single, 10000.0, 1), 6.0);
+
+    // 2 nodes -> 200 Hz (radius 2) and 2000 Hz (radius 8)
+    let mut n_low = StrengthNode::new(1, 200.0, 1.0);
+    n_low.radius = 2;
+    let mut n_high = StrengthNode::new(2, 2000.0, 1.0);
+    n_high.radius = 8;
+    let two_nodes = vec![n_low, n_high];
+
+    // Clamped below lowest and above highest
+    assert_eq!(radius_at(&two_nodes, 50.0, 1), 2.0);
+    assert_eq!(radius_at(&two_nodes, 200.0, 1), 2.0);
+    assert_eq!(radius_at(&two_nodes, 2000.0, 1), 8.0);
+    assert_eq!(radius_at(&two_nodes, 15000.0, 1), 8.0);
+
+    // Midpoint in log-frequency space: sqrt(200 * 2000) = ~632.45 Hz
+    let mid_f = (200.0_f64 * 2000.0).sqrt();
+    let r_mid = radius_at(&two_nodes, mid_f, 1);
+    // Smoothstep at t = 0.5 is 0.5 * 0.5 * (3 - 2 * 0.5) = 0.5. Radius is 2 + (8 - 2) * 0.5 = 5.0.
+    assert!(
+        (r_mid - 5.0).abs() < 1e-6,
+        "Midpoint radius should be 5.0, got {r_mid}"
+    );
+
+    // Test fill_bin_radii
+    let mut radii = vec![0; 8];
+    fill_bin_radii(&two_nodes, 8, 500.0, 1, &mut radii);
+    for &r in &radii {
+        assert!((2..=8).contains(&r));
+    }
 }

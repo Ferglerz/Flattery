@@ -6,9 +6,6 @@ authors = ["Fergler"]
 license = "GPL-3.0-or-later"
 description = "Frequency-domain leveling and spectral shaping plugin"
 
-[workspace]
-members = ["xtask"]
-
 [lib]
 crate-type = ["cdylib", "lib"]
 

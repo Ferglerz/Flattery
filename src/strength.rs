@@ -1,7 +1,38 @@
+use pleasant_ui::math::bell_influence;
 use serde::{Deserialize, Serialize};
 
 pub const STRENGTH_REST_PX: f32 = 10.0;
 pub const NODE_HIT_R: f32 = 16.0;
+pub const MIN_NODE_Q: f64 = 3.0;
+pub const MAX_NODE_Q: f64 = 18.0;
+pub const DEFAULT_NODE_Q: f64 = 6.0;
+const WEIGHT_MAX: f64 = 8.0;
+
+pub fn q_to_norm(q: f64) -> f64 {
+    let q = q.clamp(MIN_NODE_Q, MAX_NODE_Q);
+    (q.ln() - MIN_NODE_Q.ln()) / (MAX_NODE_Q.ln() - MIN_NODE_Q.ln())
+}
+
+pub fn norm_to_q(norm: f64) -> f64 {
+    let norm = norm.clamp(0.0, 1.0);
+    (MIN_NODE_Q.ln() + norm * (MAX_NODE_Q.ln() - MIN_NODE_Q.ln())).exp()
+}
+
+pub fn q_to_width_pct(q: f64) -> f64 {
+    (1.0 - q_to_norm(q)) * 100.0
+}
+
+pub fn width_pct_to_q(pct: f64) -> f64 {
+    norm_to_q(1.0 - pct.clamp(0.0, 100.0) / 100.0)
+}
+
+pub fn default_node_q() -> f64 {
+    DEFAULT_NODE_Q
+}
+
+pub fn default_node_radius() -> usize {
+    1
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Polarity {
@@ -13,11 +44,27 @@ pub enum Polarity {
 pub struct StrengthNode {
     pub id: u64,
     pub freq: f64,
-    /// 1.0 sits on the global offset line; 0.0 sits on the 0 dB center (no effect).
+    /// 1.0 sits on the global rest line; 0.0 sits on 0 dB. May exceed 1.0 toward max boost/cut.
     pub weight: f64,
+    #[serde(default = "default_node_q")]
+    pub q: f64,
+    #[serde(default = "default_node_radius")]
+    pub radius: usize,
 }
 
 impl StrengthNode {
+    pub fn new(id: u64, freq: f64, weight: f64) -> Self {
+        let mut node = Self {
+            id,
+            freq,
+            weight,
+            q: DEFAULT_NODE_Q,
+            radius: default_node_radius(),
+        };
+        node.sanitize();
+        node
+    }
+
     pub fn sanitize(&mut self) {
         if !self.freq.is_finite() {
             self.freq = 1000.0;
@@ -26,7 +73,12 @@ impl StrengthNode {
         if !self.weight.is_finite() {
             self.weight = 1.0;
         }
-        self.weight = self.weight.clamp(0.0, 1.0);
+        self.weight = self.weight.clamp(0.0, WEIGHT_MAX);
+        if !self.q.is_finite() {
+            self.q = DEFAULT_NODE_Q;
+        }
+        self.q = self.q.clamp(MIN_NODE_Q, MAX_NODE_Q);
+        self.radius = self.radius.clamp(1, 12);
     }
 }
 
@@ -34,46 +86,20 @@ pub fn next_node_id(nodes: &[StrengthNode]) -> u64 {
     nodes.iter().map(|n| n.id).max().unwrap_or(0) + 1
 }
 
-/// Per-bin multiplier in 0..=1.
+/// Per-bin multiplier. Empty = flat 1.0 (global strength).
 ///
-/// No nodes means a flat 1.0 (the global strength param applies uniformly).
-/// Nodes are dips/peaks relative to that line, with implicit endpoints held at 1.0.
-pub fn weight_at(nodes: &[StrengthNode], freq: f64, min_freq: f64, max_freq: f64) -> f64 {
+/// Each node is an independent bell, summed around the rest line so neighbors
+/// do not pull a spline through each other.
+pub fn weight_at(nodes: &[StrengthNode], freq: f64, _min_freq: f64, _max_freq: f64) -> f64 {
     if nodes.is_empty() {
         return 1.0;
     }
-
-    let knots = build_knots(nodes, min_freq, max_freq);
-    if knots.len() == 1 {
-        return knots[0].1.clamp(0.0, 1.0);
+    let mut w = 1.0;
+    for node in nodes {
+        let inf = bell_influence(freq, node.freq, node.q);
+        w += (node.weight - 1.0) * inf;
     }
-
-    let x = log_freq(freq.clamp(min_freq, max_freq));
-    if x <= knots[0].0 {
-        return knots[0].1.clamp(0.0, 1.0);
-    }
-    let last = knots.len() - 1;
-    if x >= knots[last].0 {
-        return knots[last].1.clamp(0.0, 1.0);
-    }
-
-    for i in 0..last {
-        if x <= knots[i + 1].0 {
-            let span = (knots[i + 1].0 - knots[i].0).max(1e-9);
-            let t = ((x - knots[i].0) / span).clamp(0.0, 1.0);
-            let p0 = if i == 0 { knots[i].1 } else { knots[i - 1].1 };
-            let p1 = knots[i].1;
-            let p2 = knots[i + 1].1;
-            let p3 = if i + 2 <= last {
-                knots[i + 2].1
-            } else {
-                knots[i + 1].1
-            };
-            return catmull(p0, p1, p2, p3, t).clamp(0.0, 1.0);
-        }
-    }
-
-    knots[last].1.clamp(0.0, 1.0)
+    w.max(0.0)
 }
 
 pub fn fill_bin_weights(
@@ -91,40 +117,61 @@ pub fn fill_bin_weights(
     }
 }
 
-fn log_freq(freq: f64) -> f64 {
-    freq.max(1.0).ln()
-}
+/// Interpolate radius between nodes in log-frequency space using smoothstep.
+pub fn radius_at(nodes: &[StrengthNode], freq: f64, default_radius: usize) -> f64 {
+    if nodes.is_empty() {
+        return default_radius as f64;
+    }
+    if nodes.len() == 1 {
+        return nodes[0].radius as f64;
+    }
 
-fn build_knots(nodes: &[StrengthNode], min_freq: f64, max_freq: f64) -> Vec<(f64, f64)> {
-    let mut nodes: Vec<&StrengthNode> = nodes.iter().collect();
-    nodes.sort_by(|a, b| a.freq.partial_cmp(&b.freq).unwrap_or(std::cmp::Ordering::Equal));
+    let mut sorted: Vec<&StrengthNode> = nodes.iter().collect();
+    sorted.sort_by(|a, b| {
+        a.freq
+            .partial_cmp(&b.freq)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
-    let mut knots = Vec::with_capacity(nodes.len() + 2);
-    knots.push((log_freq(min_freq), 1.0));
-    for node in nodes {
-        let x = log_freq(node.freq.clamp(min_freq, max_freq));
-        if (x - knots.last().unwrap().0).abs() < 1e-4 {
-            *knots.last_mut().unwrap() = (x, node.weight);
-        } else {
-            knots.push((x, node.weight));
+    if freq <= sorted[0].freq {
+        return sorted[0].radius as f64;
+    }
+    if freq >= sorted.last().unwrap().freq {
+        return sorted.last().unwrap().radius as f64;
+    }
+
+    for i in 0..sorted.len() - 1 {
+        let n0 = sorted[i];
+        let n1 = sorted[i + 1];
+        if freq >= n0.freq && freq <= n1.freq {
+            let f0_ln = n0.freq.ln();
+            let f1_ln = n1.freq.ln();
+            let t = if (f1_ln - f0_ln).abs() < 1e-6 {
+                0.0
+            } else {
+                ((freq.ln() - f0_ln) / (f1_ln - f0_ln)).clamp(0.0, 1.0)
+            };
+            let smooth_t = t * t * (3.0 - 2.0 * t);
+            return n0.radius as f64 + (n1.radius as f64 - n0.radius as f64) * smooth_t;
         }
     }
-    let max_x = log_freq(max_freq);
-    if (max_x - knots.last().unwrap().0).abs() < 1e-4 {
-        knots.last_mut().unwrap().0 = max_x;
-    } else {
-        knots.push((max_x, 1.0));
-    }
-    knots
+
+    sorted.last().unwrap().radius as f64
 }
 
-fn catmull(p0: f64, p1: f64, p2: f64, p3: f64, t: f64) -> f64 {
-    let t2 = t * t;
-    let t3 = t2 * t;
-    0.5 * (2.0 * p1
-        + (-p0 + p2) * t
-        + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
-        + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
+pub fn fill_bin_radii(
+    nodes: &[StrengthNode],
+    bin_count: usize,
+    bin_hz: f64,
+    default_radius: usize,
+    out: &mut [usize],
+) {
+    let n = bin_count.min(out.len());
+    for (k, slot) in out.iter_mut().enumerate().take(n) {
+        let freq = (k as f64 + 0.5) * bin_hz;
+        let r = radius_at(nodes, freq, default_radius).round();
+        *slot = (r as usize).clamp(1, 12);
+    }
 }
 
 #[cfg(test)]
@@ -132,7 +179,7 @@ mod tests {
     use super::*;
 
     fn node(id: u64, freq: f64, weight: f64) -> StrengthNode {
-        StrengthNode { id, freq, weight }
+        StrengthNode::new(id, freq, weight)
     }
 
     #[test]
@@ -153,10 +200,17 @@ mod tests {
     }
 
     #[test]
+    fn distant_nodes_do_not_tie_the_midband() {
+        let nodes = [node(1, 80.0, 0.0), node(2, 12000.0, 0.0)];
+        let mid = weight_at(&nodes, 1000.0, 10.0, 22050.0);
+        assert!(mid > 0.7, "bells should not drag 1 kHz toward 0, got {mid}");
+    }
+
+    #[test]
     fn weights_are_clamped() {
-        let nodes = [node(1, 1000.0, 4.0)];
+        let nodes = [node(1, 1000.0, 40.0)];
         let w = weight_at(&nodes, 1000.0, 10.0, 22050.0);
-        assert!((0.0..=1.0).contains(&w));
+        assert!(w <= WEIGHT_MAX + 1e-9);
     }
 
     #[test]

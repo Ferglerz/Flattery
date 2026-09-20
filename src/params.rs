@@ -127,7 +127,7 @@ pub struct FlatteryParams {
 impl Default for FlatteryParams {
     fn default() -> Self {
         Self {
-            editor_state: ViziaState::new(|| (1040, 600)),
+            editor_state: ViziaState::new(|| (1040, 660)),
             boost_nodes: Arc::new(Mutex::new(Vec::new())),
             cut_nodes: Arc::new(Mutex::new(Vec::new())),
             fft_size: EnumParam::new("FFT Size", FftSize::Fft512),
@@ -200,7 +200,11 @@ impl Default for FlatteryParams {
             .with_unit(" %")
             .with_value_to_string(formatters::v2s_f32_rounded(0)),
 
-            neighbor_radius: IntParam::new("Neighbor Radius", 1, IntRange::Linear { min: 1, max: 12 }),
+            neighbor_radius: IntParam::new(
+                "Neighbor Radius",
+                1,
+                IntRange::Linear { min: 1, max: 12 },
+            ),
 
             amplify_mode: EnumParam::new("Difference Mode", DifferenceMode::Reduce),
 
@@ -210,11 +214,17 @@ impl Default for FlatteryParams {
                 FloatRange::Skewed {
                     min: 0.1,
                     max: 200.0,
-                    factor: FloatRange::skew_factor(-1.5),
+                    factor: FloatRange::skew_factor(-2.0),
                 },
             )
             .with_unit(" ms")
-            .with_value_to_string(formatters::v2s_f32_rounded(1)),
+            .with_value_to_string(Arc::new(|v| {
+                if v < 10.0 {
+                    format!("{:.1}", v)
+                } else {
+                    format!("{:.0}", v)
+                }
+            })),
 
             release_ms: FloatParam::new(
                 "Release",
@@ -222,16 +232,25 @@ impl Default for FlatteryParams {
                 FloatRange::Skewed {
                     min: 1.0,
                     max: 2000.0,
-                    factor: FloatRange::skew_factor(-1.5),
+                    factor: FloatRange::skew_factor(-2.0),
                 },
             )
             .with_unit(" ms")
-            .with_value_to_string(formatters::v2s_f32_rounded(0)),
+            .with_value_to_string(Arc::new(|v| {
+                if v < 10.0 {
+                    format!("{:.1}", v)
+                } else {
+                    format!("{:.0}", v)
+                }
+            })),
 
             input_rms_ms: FloatParam::new(
                 "Input RMS",
                 0.0,
-                FloatRange::Linear { min: 0.0, max: 10.0 },
+                FloatRange::Linear {
+                    min: 0.0,
+                    max: 10.0,
+                },
             )
             .with_unit(" ms")
             .with_value_to_string(formatters::v2s_f32_rounded(1)),

@@ -59,7 +59,11 @@ pub fn calculate_tilt_multiplier_scaled(
     }
 }
 
-pub fn apply_tilt_compensation(target_gain_linear: f64, tilt_mult_scaled: f64, tilt_amount: f64) -> f64 {
+pub fn apply_tilt_compensation(
+    target_gain_linear: f64,
+    tilt_mult_scaled: f64,
+    tilt_amount: f64,
+) -> f64 {
     if tilt_amount.abs() <= 0.001 {
         return target_gain_linear;
     }
