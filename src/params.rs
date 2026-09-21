@@ -127,7 +127,7 @@ pub struct FlatteryParams {
 impl Default for FlatteryParams {
     fn default() -> Self {
         Self {
-            editor_state: ViziaState::new(|| (1040, 660)),
+            editor_state: ViziaState::new_screen_sized(|| (1040, 660)),
             boost_nodes: Arc::new(Mutex::new(Vec::new())),
             cut_nodes: Arc::new(Mutex::new(Vec::new())),
             fft_size: EnumParam::new("FFT Size", FftSize::Fft512),

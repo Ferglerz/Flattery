@@ -1803,6 +1803,7 @@ pub fn create(params: Arc<FlatteryParams>, shared: Arc<Shared>) -> Option<Box<dy
             })
             .width(Stretch(1.0))
             .height(Stretch(1.0));
+            nih_plug_vizia::widgets::ResizeHandle::new(cx);
         },
     )
 }
