@@ -2,14 +2,15 @@ pub mod graph;
 
 use crate::{
     dsp::Shared,
-    params::{DifferenceMode, FftSize, FlatteryParams, ProcessDomain},
+    params::{FftSize, FlatteryParams, ProcessDomain},
     strength::{
         default_node_radius, next_node_id, norm_to_q, q_to_norm, q_to_width_pct, width_pct_to_q,
         Polarity, StrengthNode, DEFAULT_NODE_Q,
     },
     ui::graph::{
         GraphLayout, COLOR_BOOST, COLOR_BOOST_HOVER, COLOR_CUT, COLOR_CUT_HOVER, CURVE_HIT_DIST,
-        GRAPH_W, GRAPH_X, HIT_DIST, WINDOW_H, WINDOW_W,
+        EDGE_PAD, GRAPH_H, GRAPH_W, GRAPH_X, GRAPH_Y, HIT_DIST, NODE_ROW_GAP, NODE_ROW_Y,
+        NODE_SLIDER_H, SIDE_W, SIDE_X, WINDOW_H, WINDOW_W,
     },
 };
 use nih_plug::prelude::*;
@@ -43,8 +44,19 @@ fn prefs() -> &'static AppearanceStore {
 }
 
 const HEADER_HEIGHT: f32 = 70.0;
-const THEME_BUTTON: (f32, f32, f32, f32) = (870.0, 22.0, 72.0, 26.0);
-const BYPASS_BUTTON: (f32, f32, f32, f32) = (954.0, 22.0, 32.0, 26.0);
+const THEME_BUTTON: (f32, f32, f32, f32) = (WINDOW_W - EDGE_PAD - 32.0 - 12.0 - 72.0, 22.0, 72.0, 26.0);
+const BYPASS_BUTTON: (f32, f32, f32, f32) = (WINDOW_W - EDGE_PAD - 32.0, 22.0, 32.0, 26.0);
+const SIDE_SLIDER_H: f32 = 50.0;
+const SIDE_BTN_H: f32 = 28.0;
+const FOOTER_BTN_GAP: f32 = 6.0;
+const DOMAIN_BTN_W: f32 = 40.0;
+const SIDE_STACK_HEIGHTS: [f32; 5] = [
+    SIDE_SLIDER_H,
+    SIDE_SLIDER_H,
+    SIDE_SLIDER_H,
+    SIDE_SLIDER_H,
+    SIDE_BTN_H,
+];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SliderId {
@@ -183,42 +195,77 @@ pub fn quantize_time_ms(val: f32) -> f32 {
 }
 
 impl FlatteryView {
+    fn side_item_y(idx: usize) -> f32 {
+        let total: f32 = SIDE_STACK_HEIGHTS.iter().sum();
+        let gap = (GRAPH_H - total) / (SIDE_STACK_HEIGHTS.len() - 1) as f32;
+        let mut y = GRAPH_Y;
+        for h in SIDE_STACK_HEIGHTS.iter().take(idx) {
+            y += *h + gap;
+        }
+        y
+    }
+
+    fn side_rect(idx: usize) -> (f32, f32, f32, f32) {
+        (
+            SIDE_X,
+            Self::side_item_y(idx),
+            SIDE_W,
+            SIDE_STACK_HEIGHTS[idx],
+        )
+    }
+
+    fn node_slider_rect(idx: usize) -> (f32, f32, f32, f32) {
+        let gap = 10.0;
+        let w = (GRAPH_W - gap * 3.0) / 4.0;
+        let x = GRAPH_X + idx as f32 * (w + gap);
+        (x, NODE_ROW_Y, w, NODE_SLIDER_H)
+    }
+
     fn slider_rect(id: SliderId) -> (f32, f32, f32, f32) {
         match id {
-            SliderId::Attack => (84.0, 476.0, 165.0, 50.0),
-            SliderId::Release => (84.0, 534.0, 165.0, 50.0),
-            SliderId::InputRms => (259.0, 476.0, 165.0, 50.0),
-            SliderId::StereoLink => (259.0, 534.0, 165.0, 50.0),
-            SliderId::OutputGain => (424.0, 476.0, 168.0, 108.0),
-            SliderId::NodeFreq => (592.0, 476.0, 165.0, 50.0),
-            SliderId::NodeGain => (592.0, 534.0, 165.0, 50.0),
-            SliderId::NodeQ => (767.0, 476.0, 165.0, 50.0),
-            SliderId::NodeRadius => (767.0, 534.0, 165.0, 50.0),
+            SliderId::Attack => Self::side_rect(0),
+            SliderId::Release => Self::side_rect(1),
+            SliderId::InputRms => Self::side_rect(2),
+            SliderId::StereoLink => Self::side_rect(3),
+            SliderId::OutputGain => Self::output_knob_rect(),
+            SliderId::NodeFreq => Self::node_slider_rect(0),
+            SliderId::NodeGain => Self::node_slider_rect(1),
+            SliderId::NodeQ => Self::node_slider_rect(2),
+            SliderId::NodeRadius => Self::node_slider_rect(3),
         }
     }
 
-    const OUTPUT_KNOB_CENTER: (f32, f32) = (508.0, 530.0);
-    const OUTPUT_KNOB_VALUE_RECT: (f32, f32, f32, f32) = (508.0 - 45.0, 568.0, 90.0, 20.0);
-    const FOOTER_SUB_Y: f32 = 596.0;
-    const FOOTER_BTN_H: f32 = 28.0;
+    fn output_knob_rect() -> (f32, f32, f32, f32) {
+        let w = SIDE_W;
+        let h = 108.0;
+        let area_y = GRAPH_Y + GRAPH_H;
+        let area_h = WINDOW_H - EDGE_PAD - area_y;
+        let y = area_y + (area_h - h) * 0.5 + NODE_ROW_GAP;
+        (SIDE_X, y, w, h)
+    }
 
-    fn footer_button_rect(idx: usize) -> (f32, f32, f32, f32) {
-        let gap = 10.0;
-        let btn_w = (GRAPH_W - gap * 2.0) / 3.0;
-        let x = GRAPH_X + idx as f32 * (btn_w + gap);
-        (x, Self::FOOTER_SUB_Y, btn_w, Self::FOOTER_BTN_H)
+    fn output_knob_center() -> (f32, f32) {
+        let r = Self::output_knob_rect();
+        (r.0 + r.2 * 0.5, r.1 + r.3 * 0.5)
+    }
+
+    fn output_knob_value_rect() -> (f32, f32, f32, f32) {
+        let (cx, cy) = Self::output_knob_center();
+        (cx - 45.0, cy + 38.0, 90.0, 20.0)
+    }
+
+    fn footer_button_row() -> (f32, f32, f32, f32) {
+        Self::side_rect(4)
     }
 
     fn fft_button_rect(&self) -> (f32, f32, f32, f32) {
-        Self::footer_button_rect(0)
+        let (x, y, w, h) = Self::footer_button_row();
+        (x, y, w - DOMAIN_BTN_W - FOOTER_BTN_GAP, h)
     }
 
     fn domain_button_rect(&self) -> (f32, f32, f32, f32) {
-        Self::footer_button_rect(1)
-    }
-
-    fn diff_mode_button_rect(&self) -> (f32, f32, f32, f32) {
-        Self::footer_button_rect(2)
+        let (x, y, w, h) = Self::footer_button_row();
+        (x + w - DOMAIN_BTN_W, y, DOMAIN_BTN_W, h)
     }
 
     fn emit_param_norm(&self, cx: &mut EventContext, ptr: ParamPtr, norm: f32) {
@@ -304,7 +351,7 @@ impl FlatteryView {
     fn slider_info(&self, id: SliderId) -> (&'static str, String, Color) {
         match id {
             SliderId::OutputGain => (
-                "OUT GAIN",
+                "OUTPUT GAIN",
                 format!("{:.1}dB", self.params.output_gain_db.value()),
                 GOLD,
             ),
@@ -762,18 +809,6 @@ impl View for FlatteryView {
                         return;
                     }
 
-                    if Self::inside(mouse_x, mouse_y, self.diff_mode_button_rect()) {
-                        let current = self.params.amplify_mode.value();
-                        let norm = if current == DifferenceMode::Reduce {
-                            1.0
-                        } else {
-                            0.0
-                        };
-                        self.emit_param_norm(cx, self.params.amplify_mode.as_ptr(), norm);
-                        cx.needs_redraw();
-                        return;
-                    }
-
                     for &id in STACKED_SLIDERS {
                         let r = Self::slider_rect(id);
                         let val_r = slider_value_rect(r);
@@ -791,19 +826,19 @@ impl View for FlatteryView {
                         }
                     }
 
-                    if Self::inside(mouse_x, mouse_y, Self::OUTPUT_KNOB_VALUE_RECT) {
+                    if Self::inside(mouse_x, mouse_y, Self::output_knob_value_rect()) {
                         let (_, val_str, _) = self.slider_info(SliderId::OutputGain);
                         self.start_edit(
                             cx,
                             SliderId::OutputGain,
-                            Self::OUTPUT_KNOB_VALUE_RECT,
+                            Self::output_knob_value_rect(),
                             val_str,
                         );
                         cx.needs_redraw();
                         return;
                     }
-                    let knob_dist_sq = (mouse_x - Self::OUTPUT_KNOB_CENTER.0).powi(2)
-                        + (mouse_y - Self::OUTPUT_KNOB_CENTER.1).powi(2);
+                    let knob_c = Self::output_knob_center();
+                    let knob_dist_sq = (mouse_x - knob_c.0).powi(2) + (mouse_y - knob_c.1).powi(2);
                     if knob_dist_sq <= 34.0 * 34.0 {
                         self.drag = Some(DragState::OutputGainKnob {
                             start_y: mouse_y,
@@ -994,8 +1029,8 @@ impl View for FlatteryView {
                 }
 
                 WindowEvent::MouseDoubleClick(MouseButton::Left) => {
-                    let knob_dist_sq = (mouse_x - Self::OUTPUT_KNOB_CENTER.0).powi(2)
-                        + (mouse_y - Self::OUTPUT_KNOB_CENTER.1).powi(2);
+                    let knob_c = Self::output_knob_center();
+                    let knob_dist_sq = (mouse_x - knob_c.0).powi(2) + (mouse_y - knob_c.1).powi(2);
                     if knob_dist_sq <= 35.0 * 35.0 {
                         self.reset_float_param(cx, &self.params.output_gain_db);
                         self.drag = None;
@@ -1655,15 +1690,10 @@ impl View for FlatteryView {
         let fft_rect = self.fft_button_rect();
         d.button(fft_rect, &format!("FFT: {fft_size}"), false, GOLD);
         let domain_label = match self.params.ms_mode.value() {
-            ProcessDomain::LR => "MODE: L/R",
-            ProcessDomain::MS => "MODE: M/S",
+            ProcessDomain::LR => "L/R",
+            ProcessDomain::MS => "M/S",
         };
         d.button(self.domain_button_rect(), domain_label, false, TEAL);
-        let diff_label = match self.params.amplify_mode.value() {
-            DifferenceMode::Reduce => "DIFF: REDUCE",
-            DifferenceMode::Amplify => "DIFF: AMPLIFY",
-        };
-        d.button(self.diff_mode_button_rect(), diff_label, false, COLORS[1]);
 
         for &id in STACKED_SLIDERS {
             let r = Self::slider_rect(id);
@@ -1691,7 +1721,7 @@ impl View for FlatteryView {
         let knob_r = Self::slider_rect(SliderId::OutputGain);
         let (label, val_str, color) = self.slider_info(SliderId::OutputGain);
         let n = self.get_slider_norm(SliderId::OutputGain);
-        let val_r = Self::OUTPUT_KNOB_VALUE_RECT;
+        let val_r = Self::output_knob_value_rect();
         let bypassed = self.params.bypass.value();
 
         if let Some(edit) = &self.edit {

@@ -11,11 +11,20 @@ use pleasant_ui::{
 
 pub const WINDOW_W: f32 = 1040.0;
 pub const WINDOW_H: f32 = 660.0;
-pub const GRAPH_X: f32 = 84.0;
-pub const GRAPH_Y: f32 = 126.0;
-pub const GRAPH_W: f32 = 848.0;
-pub const GRAPH_H: f32 = 320.0;
-pub const FOOTER_Y: f32 = 476.0;
+/// Matches header-to-graph gap (`GRAPH_Y - 70`).
+pub const EDGE_PAD: f32 = 56.0;
+pub const GRAPH_X: f32 = EDGE_PAD;
+pub const GRAPH_Y: f32 = 70.0 + EDGE_PAD;
+pub const SIDE_W: f32 = 168.0;
+pub const DB_LABEL_GUTTER: f32 = 40.0;
+pub const SIDE_GAP: f32 = 8.0;
+pub const GRAPH_W: f32 = WINDOW_W - GRAPH_X - DB_LABEL_GUTTER - SIDE_GAP - SIDE_W - EDGE_PAD;
+pub const FREQ_LABEL_SPACE: f32 = 26.0;
+pub const NODE_SLIDER_H: f32 = 50.0;
+pub const GRAPH_H: f32 = WINDOW_H - GRAPH_Y - FREQ_LABEL_SPACE - NODE_SLIDER_H - EDGE_PAD;
+pub const SIDE_X: f32 = GRAPH_X + GRAPH_W + DB_LABEL_GUTTER + SIDE_GAP;
+pub const NODE_ROW_GAP: f32 = 16.0;
+pub const NODE_ROW_Y: f32 = GRAPH_Y + GRAPH_H + FREQ_LABEL_SPACE + NODE_ROW_GAP;
 pub const HIT_DIST: f32 = 12.0;
 pub const CURVE_HIT_DIST: f32 = 10.0;
 pub const MAX_LINE_WIDTH: f32 = 3.0;
