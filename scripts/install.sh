@@ -1,17 +1,17 @@
 #!/usr/bin/env zsh
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+WORKSPACE="$(cd "$ROOT/.." && pwd)"
+cd "$ROOT"
+
+# Workspace target only. Ignore injected CARGO_TARGET_DIR (agent sandbox caches).
+export CARGO_TARGET_DIR="$WORKSPACE/target"
 
 echo "Building release VST3 and CLAP bundles..."
 cargo xtask bundle flattery --release
 
-if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
-  BUNDLED_DIR="$CARGO_TARGET_DIR/bundled"
-else
-  TARGET_DIR="$(cargo metadata --format-version 1 --no-deps | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
-  BUNDLED_DIR="$TARGET_DIR/bundled"
-fi
+BUNDLED_DIR="$CARGO_TARGET_DIR/bundled"
 
 VST3_DIR="$HOME/Library/Audio/Plug-Ins/VST3"
 CLAP_DIR="$HOME/Library/Audio/Plug-Ins/CLAP"

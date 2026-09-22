@@ -4,13 +4,13 @@ use crate::{
     dsp::Shared,
     params::{FftSize, FlatteryParams, ProcessDomain},
     strength::{
-        default_node_radius, next_node_id, norm_to_q, q_to_norm, q_to_width_pct, width_pct_to_q,
-        Polarity, StrengthNode, DEFAULT_NODE_Q,
+        default_node_radius, next_node_id, norm_to_q, q_to_norm, q_to_width_pct, weight_at,
+        width_pct_to_q, Polarity, StrengthNode, DEFAULT_NODE_Q,
     },
     ui::graph::{
-        GraphLayout, COLOR_BOOST, COLOR_BOOST_HOVER, COLOR_CUT, COLOR_CUT_HOVER, CURVE_HIT_DIST,
-        EDGE_PAD, GRAPH_H, GRAPH_W, GRAPH_X, GRAPH_Y, HIT_DIST, NODE_ROW_GAP, NODE_ROW_Y,
-        NODE_SLIDER_H, SIDE_W, SIDE_X, WINDOW_H, WINDOW_W,
+        snap_to_bin_edge, GraphLayout, COLOR_BOOST, COLOR_BOOST_HOVER, COLOR_CUT, COLOR_CUT_HOVER,
+        CURVE_HIT_DIST, EDGE_PAD, GRAPH_H, GRAPH_W, GRAPH_X, GRAPH_Y, HIT_DIST, NODE_ROW_GAP,
+        NODE_ROW_Y, NODE_SLIDER_H, SIDE_W, SIDE_X, WINDOW_H, WINDOW_W,
     },
 };
 use nih_plug::prelude::*;
@@ -28,7 +28,7 @@ use pleasant_ui::{
     draw::{ButtonAnim, Draw},
     math::{flattery_freq_to_pos, flattery_pos_to_freq},
     preferences::AppearanceStore,
-    theme::{BG, COLORS, GOLD, MUTED, PANEL, TEAL, TEXT},
+    theme::{BG, COLORS, GOLD, LINE, MUTED, PANEL, TEAL, TEXT},
     value_edit::{parse_number_with_units, slider_value_rect, typed_char, ValueEdit},
     FONT_JETBRAINS_MONO,
 };
@@ -44,7 +44,8 @@ fn prefs() -> &'static AppearanceStore {
 }
 
 const HEADER_HEIGHT: f32 = 70.0;
-const THEME_BUTTON: (f32, f32, f32, f32) = (WINDOW_W - EDGE_PAD - 32.0 - 12.0 - 72.0, 22.0, 72.0, 26.0);
+const THEME_BUTTON: (f32, f32, f32, f32) =
+    (WINDOW_W - EDGE_PAD - 32.0 - 12.0 - 72.0, 22.0, 72.0, 26.0);
 const BYPASS_BUTTON: (f32, f32, f32, f32) = (WINDOW_W - EDGE_PAD - 32.0, 22.0, 32.0, 26.0);
 const SIDE_SLIDER_H: f32 = 50.0;
 const SIDE_BTN_H: f32 = 28.0;
@@ -154,9 +155,103 @@ pub struct FlatteryView {
     hover: Option<(f32, f32)>,
     edit: Option<ValueEdit<SliderId>>,
     bypass_anim: ButtonAnim,
+    graph_zoomed: bool,
 }
 
 #[allow(dead_code)]
+fn draw_corner_icon(d: &mut Draw, r: (f32, f32, f32, f32), inward: bool, hot: bool, enabled: bool) {
+    let fade = if enabled { 1.0 } else { 0.32 };
+    let mut panel = PANEL;
+    panel.a *= fade;
+    let mut line = LINE;
+    line.a *= fade;
+    d.rounded_rect(r.0, r.1, r.2, r.3, 4.0, panel);
+    d.outline(r, line);
+    let color = if !enabled {
+        Color { a: fade, ..MUTED }
+    } else if hot {
+        TEXT
+    } else {
+        MUTED
+    };
+    let (x, y, w, h) = r;
+    let arm = 5.0;
+    if inward {
+        let m = 4.5;
+        d.poly(
+            &[(x + m, y + m + arm), (x + m, y + m), (x + m + arm, y + m)],
+            color,
+            1.3,
+        );
+        d.poly(
+            &[
+                (x + w - m - arm, y + m),
+                (x + w - m, y + m),
+                (x + w - m, y + m + arm),
+            ],
+            color,
+            1.3,
+        );
+        d.poly(
+            &[
+                (x + m, y + h - m - arm),
+                (x + m, y + h - m),
+                (x + m + arm, y + h - m),
+            ],
+            color,
+            1.3,
+        );
+        d.poly(
+            &[
+                (x + w - m - arm, y + h - m),
+                (x + w - m, y + h - m),
+                (x + w - m, y + h - m - arm),
+            ],
+            color,
+            1.3,
+        );
+    } else {
+        let m = 3.0;
+        let inset = 8.0;
+        d.poly(
+            &[
+                (x + m, y + inset),
+                (x + inset, y + inset),
+                (x + inset, y + m),
+            ],
+            color,
+            1.3,
+        );
+        d.poly(
+            &[
+                (x + w - inset, y + m),
+                (x + w - inset, y + inset),
+                (x + w - m, y + inset),
+            ],
+            color,
+            1.3,
+        );
+        d.poly(
+            &[
+                (x + inset, y + h - m),
+                (x + inset, y + h - inset),
+                (x + m, y + h - inset),
+            ],
+            color,
+            1.3,
+        );
+        d.poly(
+            &[
+                (x + w - m, y + h - inset),
+                (x + w - inset, y + h - inset),
+                (x + w - inset, y + h - m),
+            ],
+            color,
+            1.3,
+        );
+    }
+}
+
 fn fmt_hz(f: f32) -> String {
     if f >= 1000.0 {
         format!("{:.1}k", f / 1000.0)
@@ -459,7 +554,8 @@ impl FlatteryView {
             }
             SliderId::NodeFreq => {
                 if let Some((polarity, node_id)) = self.selected {
-                    let new_freq = flattery_pos_to_freq(raw_norm as f64, 10.0, 22050.0);
+                    let new_freq =
+                        self.snap_hz(flattery_pos_to_freq(raw_norm as f64, 10.0, 22050.0));
                     self.with_nodes_mut(polarity, |nodes| {
                         if let Some(node) = nodes.iter_mut().find(|n| n.id == node_id) {
                             node.freq = new_freq;
@@ -508,10 +604,57 @@ impl FlatteryView {
     }
 
     fn sync_scale(&mut self) {
-        self.layout.update_db_scale(
+        self.layout.set_view(
+            self.params.max_boost_db.value(),
+            self.params.max_cut_db.value(),
+            self.params.low_cut_hz.value() as f64,
+            self.params.high_cut_hz.value() as f64,
+            self.graph_zoomed,
+        );
+    }
+
+    /// In sits at the graph's top-right. Out appears to its left once zoomed.
+    fn zoom_button_rects(
+        &self,
+        layout: &GraphLayout,
+    ) -> (Option<(f32, f32, f32, f32)>, Option<(f32, f32, f32, f32)>) {
+        let show_in = layout.work_is_narrow(
+            self.params.low_cut_hz.value() as f64,
+            self.params.high_cut_hz.value() as f64,
             self.params.max_boost_db.value(),
             self.params.max_cut_db.value(),
         );
+        let show_out = self.graph_zoomed;
+        if !show_in && !show_out {
+            return (None, None);
+        }
+        let size = 22.0;
+        let gap = 4.0;
+        let y = layout.gy + 6.0;
+        let mut left = layout.gx + layout.gw - 6.0 - size;
+        let in_r = if show_in {
+            let r = (left, y, size, size);
+            left -= size + gap;
+            Some(r)
+        } else {
+            None
+        };
+        let out_r = if show_out {
+            Some((left, y, size, size))
+        } else {
+            None
+        };
+        (in_r, out_r)
+    }
+
+    fn zoom_would_tighten(&self, layout: &GraphLayout) -> bool {
+        layout.zoom_would_tighten(
+            self.params.low_cut_hz.value() as f64,
+            self.params.high_cut_hz.value() as f64,
+            self.params.max_boost_db.value(),
+            self.params.max_cut_db.value(),
+            self.bin_hz(),
+        )
     }
 
     fn strength_pct(&self, polarity: Polarity) -> f32 {
@@ -519,6 +662,24 @@ impl FlatteryView {
             Polarity::Boost => self.params.strength_boost.value(),
             Polarity::Cut => self.params.strength_cut.value(),
         }
+    }
+
+    fn bin_hz(&self) -> f64 {
+        let fft = self.params.fft_size.value().size();
+        let srate = self.shared.sample_rate.load(Ordering::Relaxed) as f64;
+        if fft == 0 || srate <= 0.0 {
+            0.0
+        } else {
+            srate / fft as f64
+        }
+    }
+
+    fn snap_hz(&self, freq: f64) -> f64 {
+        snap_to_bin_edge(freq, self.bin_hz())
+    }
+
+    fn idle_hover(&self) -> Option<(f32, f32)> {
+        pleasant_ui::idle_hover(self.hover, self.drag.is_some())
     }
 
     fn with_nodes_mut<R>(
@@ -536,13 +697,13 @@ impl FlatteryView {
         }
     }
 
-    fn create_node(&mut self, polarity: Polarity, x: f32, y: f32) -> u64 {
-        let freq = self.layout.x_to_freq(x);
-        let weight = self
-            .layout
-            .y_to_weight(polarity, self.strength_pct(polarity), y);
+    fn create_node(&mut self, polarity: Polarity, x: f32) -> u64 {
+        let freq = self.snap_hz(self.layout.x_to_freq(x));
+        let min_freq = self.layout.min_freq;
+        let max_freq = self.layout.max_freq;
         self.with_nodes_mut(polarity, |nodes| {
             let id = next_node_id(nodes);
+            let weight = weight_at(nodes, freq, min_freq, max_freq);
             nodes.push(StrengthNode::new(id, freq, weight));
             id
         })
@@ -610,9 +771,10 @@ impl FlatteryView {
                         &[("khz", 1000.0), ("k", 1000.0), ("hz", 1.0)],
                     ) {
                         if let Some((polarity, id)) = self.selected {
+                            let freq = self.snap_hz(v);
                             self.with_nodes_mut(polarity, |nodes| {
                                 if let Some(node) = nodes.iter_mut().find(|n| n.id == id) {
-                                    node.freq = v;
+                                    node.freq = freq;
                                     node.sanitize();
                                 }
                             });
@@ -776,6 +938,28 @@ impl View for FlatteryView {
                         let norm = if !current { 1.0 } else { 0.0 };
                         self.emit_param_norm(cx, self.params.bypass.as_ptr(), norm);
                         self.bypass_anim.trigger_click();
+                        cx.needs_redraw();
+                        return;
+                    }
+
+                    let (zoom_in, zoom_out) = self.zoom_button_rects(&self.layout);
+                    if zoom_in.is_some_and(|r| Self::inside(mouse_x, mouse_y, r)) {
+                        if self.zoom_would_tighten(&self.layout) {
+                            self.graph_zoomed = true;
+                            self.layout.apply_work_zoom(
+                                self.params.low_cut_hz.value() as f64,
+                                self.params.high_cut_hz.value() as f64,
+                                self.params.max_boost_db.value(),
+                                self.params.max_cut_db.value(),
+                                self.bin_hz(),
+                            );
+                        }
+                        cx.needs_redraw();
+                        return;
+                    }
+                    if zoom_out.is_some_and(|r| Self::inside(mouse_x, mouse_y, r)) {
+                        self.graph_zoomed = false;
+                        self.sync_scale();
                         cx.needs_redraw();
                         return;
                     }
@@ -1016,7 +1200,7 @@ impl View for FlatteryView {
                                     start_val: self.strength_pct(polarity),
                                 });
                             } else {
-                                let id = self.create_node(polarity, mouse_x, mouse_y);
+                                let id = self.create_node(polarity, mouse_x);
                                 self.selected = Some((polarity, id));
                                 self.drag = Some(DragState::StrengthNode { polarity, id });
                             }
@@ -1195,7 +1379,7 @@ impl View for FlatteryView {
                         } else {
                             Polarity::Cut
                         };
-                        let id = self.create_node(polarity, mouse_x, mouse_y);
+                        let id = self.create_node(polarity, mouse_x);
                         self.selected = Some((polarity, id));
                         cx.needs_redraw();
                     }
@@ -1261,10 +1445,10 @@ impl View for FlatteryView {
                         match drag {
                             DragState::LowCut { start_x, start_val } => {
                                 let delta = mouse_x - start_x;
-                                let new_freq = (self
-                                    .layout
-                                    .x_to_freq(self.layout.freq_to_x(start_val as f64) + delta)
-                                    as f32)
+                                let new_freq = (self.snap_hz(
+                                    self.layout
+                                        .x_to_freq(self.layout.freq_to_x(start_val as f64) + delta),
+                                ) as f32)
                                     .clamp(10.0, self.params.high_cut_hz.value());
                                 let norm = self.params.low_cut_hz.preview_normalized(new_freq);
                                 self.emit_param_norm(cx, self.params.low_cut_hz.as_ptr(), norm);
@@ -1272,10 +1456,10 @@ impl View for FlatteryView {
                             }
                             DragState::HighCut { start_x, start_val } => {
                                 let delta = mouse_x - start_x;
-                                let new_freq = (self
-                                    .layout
-                                    .x_to_freq(self.layout.freq_to_x(start_val as f64) + delta)
-                                    as f32)
+                                let new_freq = (self.snap_hz(
+                                    self.layout
+                                        .x_to_freq(self.layout.freq_to_x(start_val as f64) + delta),
+                                ) as f32)
                                     .clamp(self.params.low_cut_hz.value(), 20000.0);
                                 let norm = self.params.high_cut_hz.preview_normalized(new_freq);
                                 self.emit_param_norm(cx, self.params.high_cut_hz.as_ptr(), norm);
@@ -1381,7 +1565,7 @@ impl View for FlatteryView {
                                 cx.needs_redraw();
                             }
                             DragState::StrengthNode { polarity, id } => {
-                                let freq = self.layout.x_to_freq(mouse_x);
+                                let freq = self.snap_hz(self.layout.x_to_freq(mouse_x));
                                 let weight = self.layout.y_to_weight(
                                     polarity,
                                     self.strength_pct(polarity),
@@ -1498,6 +1682,8 @@ impl View for FlatteryView {
 
                 WindowEvent::MouseLeave => {
                     self.hover = None;
+                    self.hover_curve = None;
+                    self.hover_node = None;
                     cx.needs_redraw();
                 }
 
@@ -1535,7 +1721,7 @@ impl View for FlatteryView {
         );
 
         let bypass_hovered = self
-            .hover
+            .idle_hover()
             .is_some_and(|(hx, hy)| Self::inside(hx, hy, BYPASS_BUTTON));
         let bypass_click = self.bypass_anim.step();
         d.bypass_button(
@@ -1549,12 +1735,20 @@ impl View for FlatteryView {
         let srate = self.shared.sample_rate.load(Ordering::Relaxed) as f64;
         let fft_size = self.params.fft_size.value().size();
         let mut layout = self.layout;
-        layout.update_db_scale(
+        layout.set_view(
             self.params.max_boost_db.value(),
             self.params.max_cut_db.value(),
+            self.params.low_cut_hz.value() as f64,
+            self.params.high_cut_hz.value() as f64,
+            self.graph_zoomed,
         );
 
         layout.draw_background(&mut d, fft_size, srate);
+        layout.draw_limit_shade(
+            &mut d,
+            self.params.max_boost_db.value(),
+            self.params.max_cut_db.value(),
+        );
         layout.draw_grid_and_labels(&mut d);
 
         let low_cut = self.params.low_cut_hz.value() as f64;
@@ -1626,6 +1820,28 @@ impl View for FlatteryView {
                 || self.hover_node.map(|h| h.0) == Some(Polarity::Cut),
             selected_cut,
         );
+        if self.drag.is_none() && self.hover_node.is_none() {
+            if let Some(polarity) = self.hover_curve {
+                let pct = match polarity {
+                    Polarity::Boost => boost_pct,
+                    Polarity::Cut => cut_pct,
+                };
+                let freq = self.snap_hz(layout.x_to_freq(self.mouse.0));
+                let nodes = match polarity {
+                    Polarity::Boost => &boost_nodes,
+                    Polarity::Cut => &cut_nodes,
+                };
+                let weight = weight_at(nodes, freq, layout.min_freq, layout.max_freq);
+                let preview = StrengthNode::new(0, freq, weight);
+                let stroke = match polarity {
+                    Polarity::Boost => COLOR_BOOST_HOVER,
+                    Polarity::Cut => COLOR_CUT_HOVER,
+                };
+                layout.draw_strength_node(
+                    &mut d, polarity, pct, &preview, stroke, false, low_cut, high_cut, 0.55,
+                );
+            }
+        }
         d.reset_scissor();
 
         layout.draw_strength_handle(
@@ -1687,6 +1903,32 @@ impl View for FlatteryView {
             self.hover_high_cut,
         );
 
+        let (zoom_in, zoom_out) = self.zoom_button_rects(&layout);
+        let can_zoom_in = self.zoom_would_tighten(&layout);
+        let cluster_left = zoom_out
+            .or(zoom_in)
+            .map(|r| r.0)
+            .unwrap_or(layout.gx + layout.gw);
+        if let Some(r) = zoom_in {
+            let hot = can_zoom_in
+                && self
+                    .idle_hover()
+                    .is_some_and(|(hx, hy)| Self::inside(hx, hy, r));
+            draw_corner_icon(&mut d, r, true, hot, can_zoom_in);
+            if hot {
+                d.text_right(cluster_left - 6.0, r.1 + 15.0, "Zoom to area", 10.0, MUTED);
+            }
+        }
+        if let Some(r) = zoom_out {
+            let hot = self
+                .idle_hover()
+                .is_some_and(|(hx, hy)| Self::inside(hx, hy, r));
+            draw_corner_icon(&mut d, r, false, hot, true);
+            if hot {
+                d.text_right(cluster_left - 6.0, r.1 + 15.0, "Reset zoom", 10.0, MUTED);
+            }
+        }
+
         let fft_rect = self.fft_button_rect();
         d.button(fft_rect, &format!("FFT: {fft_size}"), false, GOLD);
         let domain_label = match self.params.ms_mode.value() {
@@ -1709,7 +1951,7 @@ impl View for FlatteryView {
             }
             d.control(r, label, &val_str, n, color);
             if self.edit.is_none() {
-                if let Some((hx, hy)) = self.hover {
+                if let Some((hx, hy)) = self.idle_hover() {
                     if Self::inside(hx, hy, val_r) {
                         d.value_underline(val_r, color);
                     }
@@ -1734,7 +1976,7 @@ impl View for FlatteryView {
         } else {
             d.knob_bipolar(knob_r, label, &val_str, n, color, bypassed);
             if self.edit.is_none() {
-                if let Some((hx, hy)) = self.hover {
+                if let Some((hx, hy)) = self.idle_hover() {
                     if Self::inside(hx, hy, val_r) {
                         d.value_underline(val_r, color);
                     }
@@ -1757,7 +1999,7 @@ impl View for FlatteryView {
             }
             d.control(r, label, &val_str, n, color);
             if self.edit.is_none() && self.selected.is_some() {
-                if let Some((hx, hy)) = self.hover {
+                if let Some((hx, hy)) = self.idle_hover() {
                     if Self::inside(hx, hy, val_r) {
                         d.value_underline(val_r, color);
                     }
@@ -1792,6 +2034,7 @@ pub fn create(params: Arc<FlatteryParams>, shared: Arc<Shared>) -> Option<Box<dy
                 hover: None,
                 edit: None,
                 bypass_anim: ButtonAnim::new(),
+                graph_zoomed: false,
             }
             .build(cx, |cx| {
                 let timer = cx.add_timer(Duration::from_millis(16), None, |cx, action| {
@@ -1803,7 +2046,6 @@ pub fn create(params: Arc<FlatteryParams>, shared: Arc<Shared>) -> Option<Box<dy
             })
             .width(Stretch(1.0))
             .height(Stretch(1.0));
-            nih_plug_vizia::widgets::ResizeHandle::new(cx);
         },
     )
 }
