@@ -1,3 +1,5 @@
+use pleasant_dsp::filters::BiquadCoefficients;
+
 #[derive(Clone, Copy, Default)]
 pub struct BiquadState {
     pub x1: f64,
@@ -63,29 +65,9 @@ impl PeakingFilter {
             self.coeffs = [1.0, 0.0, 0.0, 0.0, 0.0];
             return;
         }
-
-        let w = 2.0 * std::f64::consts::PI * self.center_hz / srate.max(1.0);
-        let cos_w = w.cos();
-        let sin_w = w.sin();
-        let alpha = sin_w / (2.0 * q.max(0.01));
-        let a = self.gain_linear.max(1e-9).sqrt();
-        let a_inv = 1.0 / a;
-
-        let b0 = 1.0 + alpha * a;
-        let b1 = -2.0 * cos_w;
-        let b2 = 1.0 - alpha * a;
-        let a0 = 1.0 + alpha * a_inv;
-        let a1 = -2.0 * cos_w;
-        let a2 = 1.0 - alpha * a_inv;
-
-        let a0_inv = 1.0 / a0;
-        self.coeffs = [
-            b0 * a0_inv,
-            b1 * a0_inv,
-            b2 * a0_inv,
-            a1 * a0_inv,
-            a2 * a0_inv,
-        ];
+        self.coeffs =
+            BiquadCoefficients::design_peak_linear(self.center_hz, self.gain_linear, q, srate)
+                .as_direct_form_array();
     }
 
     #[inline(always)]

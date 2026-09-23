@@ -1,10 +1,10 @@
-use crate::dsp::tilt::calculate_tilt_multiplier_scaled;
 use crate::strength::{weight_at, Polarity, StrengthNode, STRENGTH_REST_PX};
 use nih_plug_vizia::vizia::vg::Color;
 use pleasant_ui::{
-    draw::Draw,
+    draw::{Draw, TRACE_REST_PX},
+    graph::{AxisMapping, FlatteryFrequencyAxis},
     handles::{tag_contains, TagPointer},
-    math::{flattery_freq_to_pos, flattery_pos_to_freq, linear_to_db},
+    math::{flattery_freq_to_pos, flattery_pos_to_freq},
     spectrum::smooth_bins_f32,
     theme::{rgb, LINE, MUTED},
 };
@@ -20,6 +20,8 @@ pub const DB_LABEL_GUTTER: f32 = 40.0;
 pub const SIDE_GAP: f32 = 8.0;
 pub const GRAPH_W: f32 = WINDOW_W - GRAPH_X - DB_LABEL_GUTTER - SIDE_GAP - SIDE_W - EDGE_PAD;
 pub const FREQ_LABEL_SPACE: f32 = 26.0;
+/// Selected-node strip that replaces the frequency-axis labels.
+pub const AXIS_STRIP_H: f32 = 40.0;
 pub const NODE_SLIDER_H: f32 = 50.0;
 pub const GRAPH_H: f32 = WINDOW_H - GRAPH_Y - FREQ_LABEL_SPACE - NODE_SLIDER_H - EDGE_PAD;
 pub const SIDE_X: f32 = GRAPH_X + GRAPH_W + DB_LABEL_GUTTER + SIDE_GAP;
@@ -34,7 +36,6 @@ pub const COLOR_LOW_CUT: Color = rgb(171, 151, 238);
 pub const COLOR_LOW_CUT_HOVER: Color = rgb(195, 180, 250);
 pub const COLOR_HIGH_CUT: Color = rgb(95, 220, 120);
 pub const COLOR_HIGH_CUT_HOVER: Color = rgb(130, 255, 150);
-pub const COLOR_TILT: Color = rgb(240, 80, 150);
 pub const COLOR_GAIN_LINE: Color = Color {
     r: 245.0 / 255.0,
     g: 215.0 / 255.0,
@@ -58,6 +59,15 @@ pub fn snap_to_bin_edge(freq: f64, bin_hz: f64) -> f64 {
         return freq;
     }
     (freq / bin_hz).round() * bin_hz
+}
+
+/// Nearest FFT bin center: `(k + 0.5) * bin_hz`.
+pub fn snap_to_bin_center(freq: f64, bin_hz: f64) -> f64 {
+    if !(bin_hz.is_finite() && bin_hz > 0.0) || !freq.is_finite() {
+        return freq;
+    }
+    let k = (freq / bin_hz - 0.5).round();
+    (k + 0.5) * bin_hz
 }
 
 const STRIPE_DARK: Color = rgb(23, 27, 33);
@@ -175,18 +185,23 @@ fn draw_split_poly(
     x_hi: f32,
     color: Color,
     width: f32,
+    baseline: Option<f32>,
 ) {
     let [left, mid, right] = split_polyline(points, x_lo, x_hi);
     let muted = desaturate(color, OUTSIDE_ALPHA);
-    if left.len() >= 2 {
-        d.poly(&left, muted, width);
-    }
-    if mid.len() >= 2 {
-        d.poly(&mid, color, width);
-    }
-    if right.len() >= 2 {
-        d.poly(&right, muted, width);
-    }
+    let stroke = |d: &mut Draw, pts: &[(f32, f32)], color: Color| {
+        if pts.len() < 2 {
+            return;
+        }
+        if let Some(baseline) = baseline {
+            d.poly_above(pts, baseline, color, width);
+        } else {
+            d.poly(pts, color, width);
+        }
+    };
+    stroke(d, &left, muted);
+    stroke(d, &mid, color);
+    stroke(d, &right, muted);
 }
 
 fn draw_split_area(
@@ -249,8 +264,6 @@ impl GraphLayout {
         self.db_max = self.db_scale;
     }
 
-    /// Fit X and Y to the cut filters and max boost/cut, plus 5% of that span on each side.
-    /// Visible Hz span never goes below [`MIN_ZOOM_HZ`]. Edges snap to FFT bins when `bin_hz` > 0.
     pub fn apply_work_zoom(
         &mut self,
         low_hz: f64,
@@ -303,7 +316,6 @@ impl GraphLayout {
         self.update_db_scale(max_boost_db, max_cut_db);
     }
 
-    /// True when the cut window or the boost/cut window covers under 80% of the full graph.
     pub fn work_is_narrow(
         &self,
         low_hz: f64,
@@ -348,13 +360,21 @@ impl GraphLayout {
     }
 
     pub fn freq_to_x(&self, freq: f64) -> f32 {
-        let pos = flattery_freq_to_pos(freq, self.min_freq, self.max_freq) as f32;
+        let pos = FlatteryFrequencyAxis {
+            minimum_hz: self.min_freq,
+            maximum_hz: self.max_freq,
+        }
+        .value_to_position(freq) as f32;
         self.gx + pos * self.gw
     }
 
     pub fn x_to_freq(&self, x: f32) -> f64 {
         let pos = ((x - self.gx) / self.gw).clamp(0.0, 1.0) as f64;
-        flattery_pos_to_freq(pos, self.min_freq, self.max_freq)
+        FlatteryFrequencyAxis {
+            minimum_hz: self.min_freq,
+            maximum_hz: self.max_freq,
+        }
+        .position_to_value(pos)
     }
 
     pub fn db_to_y(&self, db: f64) -> f32 {
@@ -470,654 +490,14 @@ impl GraphLayout {
         (y - cy).abs()
     }
 
-    pub fn draw_background(&self, d: &mut Draw, fft_size: usize, srate: f64) {
-        let bin_hz = srate / fft_size as f64;
-        let bin_hz_inv = 1.0 / bin_hz;
-        let right = self.gx + self.gw;
-        let columns = self.gw.ceil() as usize;
-
-        for i in 0..columns {
-            let x0 = self.gx + i as f32;
-            let x1 = (self.gx + (i + 1) as f32).min(right);
-            let w = x1 - x0;
-            if w <= 0.0 {
-                continue;
-            }
-
-            let norm = (i as f32 / self.gw).clamp(0.0, 1.0) as f64;
-            let pixel_bin = flattery_pos_to_freq(norm, self.min_freq, self.max_freq) * bin_hz_inv;
-            let bin_start = pixel_bin.max(0.0) as usize;
-
-            let next_norm = ((i + 1) as f32 / self.gw).min(1.0) as f64;
-            let next_bin =
-                flattery_pos_to_freq(next_norm, self.min_freq, self.max_freq) * bin_hz_inv;
-            let bins_per_pixel = (next_bin - pixel_bin).max(0.0);
-            let band_width_px = if bins_per_pixel > 0.0 {
-                1.0 / bins_per_pixel
-            } else {
-                9999.0
-            };
-
-            d.rect(
-                x0,
-                self.gy,
-                w,
-                self.gh,
-                stripe_color(bin_start, band_width_px),
-            );
-        }
-
-        d.outline((self.gx, self.gy, self.gw, self.gh), LINE);
-    }
-
-    pub fn draw_grid_and_labels(&self, d: &mut Draw) {
-        let span = self.db_max - self.db_min;
-        let step = if span <= 8.0 {
-            1
-        } else if span <= 16.0 {
-            2
-        } else if span <= 28.0 {
-            3
-        } else if span <= 48.0 {
-            6
-        } else {
-            12
-        };
-
-        let mut db = (self.db_min / step as f64).ceil() as i32 * step;
-        let last = self.db_max.floor() as i32;
-        while db <= last {
-            let y = self.db_to_y(db as f64);
-            if y >= self.gy - 0.5 && y <= self.gy + self.gh + 0.5 {
-                d.line(
-                    self.gx,
-                    y,
-                    self.gx + self.gw,
-                    y,
-                    if db == 0 { rgb(75, 82, 92) } else { LINE },
-                    1.0,
-                );
-                let label = if db > 0 {
-                    format!("+{db}")
-                } else {
-                    format!("{db}")
-                };
-                d.text(self.gx + self.gw + 10.0, y + 4.0, &label, 10.5, MUTED);
-            }
-            db += step;
-        }
-
-        let full_freq = (self.min_freq - FULL_MIN_FREQ).abs() < 0.5
-            && (self.max_freq - FULL_MAX_FREQ).abs() < 1.0;
-        if full_freq {
-            for &(freq, label) in &[
-                (20.0, ""),
-                (50.0, ""),
-                (100.0, ""),
-                (200.0, "200"),
-                (500.0, "500"),
-                (1000.0, "1k"),
-                (2000.0, "2k"),
-                (5000.0, "5k"),
-                (10000.0, "10k"),
-                (20000.0, ""),
-            ] {
-                if freq > self.min_freq && freq < self.max_freq {
-                    let x = self.freq_to_x(freq);
-                    d.line(x, self.gy, x, self.gy + self.gh, LINE, 1.0);
-                    if !label.is_empty() {
-                        d.text(x - 9.0, self.gy + self.gh + 18.0, label, 10.5, MUTED);
-                    }
-                }
-            }
-        } else {
-            self.draw_zoomed_freq_axis(d);
-        }
-    }
-
-    fn draw_zoomed_freq_axis(&self, d: &mut Draw) {
-        let mut ticks = Vec::new();
-        let mut decade = 1.0_f64;
-        while decade <= self.max_freq {
-            for mult in [1.0, 2.0, 5.0] {
-                let freq = decade * mult;
-                if freq > self.min_freq && freq < self.max_freq {
-                    ticks.push(freq);
-                }
-            }
-            decade *= 10.0;
-        }
-
-        let mut last_x = f32::NEG_INFINITY;
-        for freq in ticks {
-            let x = self.freq_to_x(freq);
-            if x - last_x < 36.0 {
-                continue;
-            }
-            last_x = x;
-            d.line(x, self.gy, x, self.gy + self.gh, LINE, 1.0);
-            let label = if freq >= 1000.0 {
-                let k = freq / 1000.0;
-                if (k - k.round()).abs() < 0.05 {
-                    format!("{}k", k.round() as i32)
-                } else {
-                    format!("{k:.1}k")
-                }
-            } else {
-                format!("{}", freq.round() as i32)
-            };
-            d.text(x - 9.0, self.gy + self.gh + 18.0, &label, 10.5, MUTED);
-        }
-    }
-
-    /// Light band between max boost and max cut. Sits under the curves.
-    pub fn draw_limit_shade(&self, d: &mut Draw, max_boost_db: f32, max_cut_db: f32) {
-        let top = self
-            .db_to_y(max_boost_db as f64)
-            .clamp(self.gy, self.gy + self.gh);
-        let bot = self
-            .db_to_y(-(max_cut_db as f64))
-            .clamp(self.gy, self.gy + self.gh);
-        let y = top.min(bot);
-        let h = (bot - top).abs();
-        if h > 1.0 {
-            d.rounded_rect(self.gx, y, self.gw, h, 0.0, Color::rgba(210, 218, 230, 13));
-        }
-    }
-
-    pub fn draw_operate_window(&self, d: &mut Draw, op_min_db: f64, op_max_db: f64) {
-        let bottom = self.gy + self.gh;
-        let center = self.center_y();
-        let min_y = self.mag_to_y(op_min_db).min(bottom);
-        let max_y = self.mag_to_y(op_max_db).max(center);
-
-        let dim = Color::rgba(8, 10, 14, 90);
-        if min_y < bottom - 1.0 {
-            d.rect(self.gx, min_y, self.gw, bottom - min_y, dim);
-        }
-        if max_y > center + 1.0 {
-            d.rect(self.gx, center, self.gw, max_y - center, dim);
-        }
-
-        d.line(
-            self.gx,
-            min_y,
-            self.gx + 28.0,
-            min_y,
-            Color::rgba(160, 170, 185, 180),
-            1.5,
-        );
-        d.line(
-            self.gx,
-            max_y.min(center),
-            self.gx + 28.0,
-            max_y.min(center),
-            Color::rgba(160, 170, 185, 180),
-            1.5,
-        );
-    }
-
-    pub fn draw_spectrum(
-        &self,
-        d: &mut Draw,
-        mags_db: &[f32],
-        fft_size: usize,
-        srate: f64,
-        low_cut_hz: f64,
-        high_cut_hz: f64,
-    ) {
-        if mags_db.is_empty() {
-            return;
-        }
-        let mut smoothed = vec![0.0_f32; mags_db.len()];
-        smooth_bins_f32(mags_db, &mut smoothed);
-
-        let bin_hz = srate / fft_size as f64;
-        let mut points = Vec::with_capacity(smoothed.len());
-
-        for (k, &db) in smoothed.iter().enumerate() {
-            let freq = (k as f64 + 0.5) * bin_hz;
-            if freq > self.max_freq {
-                break;
-            }
-            let x = self.freq_to_x(freq);
-            let y = self.mag_to_y(db as f64);
-            points.push((x, y));
-        }
-
-        if points.is_empty() {
-            return;
-        }
-
-        let x_lo = self.freq_to_x(low_cut_hz);
-        let x_hi = self.freq_to_x(high_cut_hz);
-        draw_split_area(
-            d,
-            &points,
-            self.gy + self.gh,
-            x_lo,
-            x_hi,
-            Color::rgba(65, 140, 240, 45),
-        );
-        draw_split_poly(d, &points, x_lo, x_hi, Color::rgba(90, 160, 255, 160), 1.2);
-    }
-
-    pub fn draw_filter_gains(
-        &self,
-        d: &mut Draw,
-        filters: &[(f32, f32)],
-        fft_size: usize,
-        srate: f64,
-        low_cut_hz: f64,
-        high_cut_hz: f64,
-    ) {
-        if filters.is_empty() || fft_size == 0 || srate <= 0.0 {
-            return;
-        }
-
-        let bin_hz = srate / fft_size as f64;
-        let y_center = self.zero_y();
-
-        for &(center_hz, gain_db) in filters {
-            let freq = center_hz as f64;
-            if freq < self.min_freq || freq > self.max_freq {
-                continue;
-            }
-
-            let k = (freq / bin_hz).floor() as usize;
-            let bin_start_hz = k as f64 * bin_hz;
-            let bin_end_hz = (k + 1) as f64 * bin_hz;
-
-            let x_left = self.freq_to_x(bin_start_hz.max(self.min_freq));
-            let x_right = self.freq_to_x(bin_end_hz.min(self.max_freq));
-
-            let bw = (x_right - x_left).max(1.0);
-            let bar_w = if bw > 2.0 { bw - 1.0 } else { bw };
-            let bar_x = if bw > 2.0 { x_left + 0.5 } else { x_left };
-
-            let y_gain = self
-                .db_to_y(gain_db as f64)
-                .clamp(self.gy, self.gy + self.gh);
-            let (bar_y, bar_h) = if y_gain < y_center {
-                (y_gain, y_center - y_gain)
-            } else {
-                (y_center, y_gain - y_center)
-            };
-
-            if bar_h >= 0.5 {
-                let color = if freq < low_cut_hz || freq > high_cut_hz {
-                    desaturate(COLOR_GAIN_LINE, OUTSIDE_ALPHA)
-                } else {
-                    COLOR_GAIN_LINE
-                };
-                d.rounded_rect(bar_x, bar_y, bar_w, bar_h, 0.0, color);
-            }
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn draw_strength_curve(
-        &self,
-        d: &mut Draw,
-        nodes: &[StrengthNode],
-        polarity: Polarity,
-        strength_pct: f32,
-        max_boost_db: f32,
-        max_cut_db: f32,
-        low_cut_hz: f64,
-        high_cut_hz: f64,
-        hover: bool,
-        selected: Option<u64>,
-    ) {
-        let (color, hover_color, fill) = match polarity {
-            Polarity::Boost => (
-                COLOR_BOOST,
-                COLOR_BOOST_HOVER,
-                Color::rgba(70, 150, 255, 32),
-            ),
-            Polarity::Cut => (COLOR_CUT, COLOR_CUT_HOVER, Color::rgba(235, 85, 85, 32)),
-        };
-        let stroke = if hover { hover_color } else { color };
-        let raw = self.sample_strength_curve(nodes, polarity, strength_pct);
-        let clipped: Vec<(f32, f32)> = raw
-            .iter()
-            .map(|&(x, y)| (x, self.clip_y(polarity, y, max_boost_db, max_cut_db)))
-            .collect();
-        let x_lo = self.freq_to_x(low_cut_hz);
-        let x_hi = self.freq_to_x(high_cut_hz);
-
-        if clipped.len() >= 2 {
-            draw_split_area(d, &clipped, self.zero_y(), x_lo, x_hi, fill);
-            let exceeded = raw
-                .iter()
-                .zip(clipped.iter())
-                .any(|(a, b)| (a.1 - b.1).abs() > 0.5);
-            if exceeded {
-                let ghost = match polarity {
-                    Polarity::Boost => Color::rgba(70, 150, 255, 70),
-                    Polarity::Cut => Color::rgba(235, 85, 85, 70),
-                };
-                draw_split_poly(d, &raw, x_lo, x_hi, ghost, 1.0);
-            }
-            draw_split_poly(
-                d,
-                &clipped,
-                x_lo,
-                x_hi,
-                stroke,
-                if hover { 2.4 } else { 1.8 },
-            );
-        }
-
-        for node in nodes {
-            self.draw_strength_node(
-                d,
-                polarity,
-                strength_pct,
-                node,
-                stroke,
-                selected == Some(node.id),
-                low_cut_hz,
-                high_cut_hz,
-                1.0,
-            );
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn draw_strength_node(
-        &self,
-        d: &mut Draw,
-        polarity: Polarity,
-        strength_pct: f32,
-        node: &StrengthNode,
-        stroke: Color,
-        selected: bool,
-        low_cut_hz: f64,
-        high_cut_hz: f64,
-        alpha: f32,
-    ) {
-        let x = self.freq_to_x(node.freq);
-        let y = self.strength_y(polarity, strength_pct, node.weight);
-        let outside = node.freq < low_cut_hz || node.freq > high_cut_hz;
-        let mut node_stroke = if outside {
-            desaturate(stroke, OUTSIDE_ALPHA + 0.2)
-        } else {
-            stroke
-        };
-        node_stroke.a = (node_stroke.a * alpha).clamp(0.0, 1.0);
-        let base_r = if selected { 7.0 } else { 5.5 };
-
-        let rings = node.radius / 2;
-        for i in (1..=rings).rev() {
-            let ring_r = base_r + i as f32 * 3.5;
-            let ring_alpha = (node_stroke.a * 0.85_f32.powi(i as i32)).clamp(0.0, 1.0);
-            d.circle(
-                x,
-                y,
-                ring_r,
-                Color {
-                    a: ring_alpha,
-                    ..node_stroke
-                },
-                true,
-            );
-        }
-
-        d.circle(x, y, base_r, node_stroke, true);
-        let mut fill = if selected {
-            rgb(255, 255, 255)
-        } else {
-            rgb(230, 230, 235)
-        };
-        fill.a = (fill.a * alpha).clamp(0.0, 1.0);
-        d.circle(x, y, base_r * 0.45, fill, true);
-    }
-
     pub fn strength_handle_pos(&self, polarity: Polarity, strength_pct: f32) -> (f32, f32) {
         (self.gx, self.strength_line_y(polarity, strength_pct))
     }
 
-    pub fn hit_strength_handle(
-        &self,
-        polarity: Polarity,
-        strength_pct: f32,
-        x: f32,
-        y: f32,
-    ) -> bool {
-        let (hx, hy) = self.strength_handle_pos(polarity, strength_pct);
-        tag_contains(hx, hy, TagPointer::Right, x, y)
-    }
-
-    pub fn draw_strength_handle(
-        &self,
-        d: &mut Draw,
-        polarity: Polarity,
-        strength_pct: f32,
-        hover: bool,
-    ) {
-        let (x, y) = self.strength_handle_pos(polarity, strength_pct);
-        let color = match (polarity, hover) {
-            (Polarity::Boost, true) => COLOR_BOOST_HOVER,
-            (Polarity::Boost, false) => COLOR_BOOST,
-            (Polarity::Cut, true) => COLOR_CUT_HOVER,
-            (Polarity::Cut, false) => COLOR_CUT,
-        };
-        d.tag_handle(x, y, TagPointer::Right, color);
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn draw_max_handles(
-        &self,
-        d: &mut Draw,
-        max_boost_db: f32,
-        max_cut_db: f32,
-        low_cut_hz: f64,
-        high_cut_hz: f64,
-        hover_boost: bool,
-        hover_cut: bool,
-    ) {
-        let boost_y = self.db_to_y(max_boost_db as f64);
-        let cut_y = self.db_to_y(-(max_cut_db as f64));
-        let boost_c = if hover_boost {
-            COLOR_BOOST_HOVER
-        } else {
-            COLOR_BOOST
-        };
-        let cut_c = if hover_cut {
-            COLOR_CUT_HOVER
-        } else {
-            COLOR_CUT
-        };
-        let x_lo = self.freq_to_x(low_cut_hz);
-        let x_hi = self.freq_to_x(high_cut_hz);
-        let right = self.gx + self.gw;
-
-        let boost_w = if hover_boost {
-            MAX_LINE_WIDTH + 0.8
-        } else {
-            MAX_LINE_WIDTH
-        };
-        let cut_w = if hover_cut {
-            MAX_LINE_WIDTH + 0.8
-        } else {
-            MAX_LINE_WIDTH
-        };
-        draw_split_poly(
-            d,
-            &[(self.gx, boost_y), (right, boost_y)],
-            x_lo,
-            x_hi,
-            boost_c,
-            boost_w,
-        );
-        draw_split_poly(
-            d,
-            &[(self.gx, cut_y), (right, cut_y)],
-            x_lo,
-            x_hi,
-            cut_c,
-            cut_w,
-        );
-    }
-
-    pub fn hit_max_line(&self, x: f32, y: f32, line_y: f32) -> bool {
-        x >= self.gx
-            && x <= self.gx + self.gw
-            && (y - line_y).abs() <= HIT_DIST
-            && y >= self.gy
-            && y <= self.gy + self.gh
-    }
-
-    pub fn hit_max_boost(&self, x: f32, y: f32, max_boost_db: f32) -> bool {
-        self.hit_max_line(x, y, self.db_to_y(max_boost_db as f64))
-    }
-
-    pub fn hit_max_cut(&self, x: f32, y: f32, max_cut_db: f32) -> bool {
-        self.hit_max_line(x, y, self.db_to_y(-(max_cut_db as f64)))
-    }
-
-    pub fn draw_line_grab(&self, d: &mut Draw, mouse_x: f32, line_y: f32, color: Color) {
-        let x = mouse_x.clamp(self.gx + 12.0, self.gx + self.gw - 12.0);
-        d.tag_handle(x, line_y, TagPointer::None, color);
-    }
-
-    pub fn hit_op_min(&self, x: f32, y: f32, op_min_db: f32) -> bool {
-        let hy = self.mag_to_y(op_min_db as f64);
-        x >= self.gx && x <= self.gx + 32.0 && (y - hy).abs() <= HIT_DIST
-    }
-
-    pub fn hit_op_max(&self, x: f32, y: f32, op_max_db: f32) -> bool {
-        let hy = self.mag_to_y(op_max_db as f64);
-        x >= self.gx && x <= self.gx + 32.0 && (y - hy).abs() <= HIT_DIST
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn hit_node(
-        &self,
-        nodes: &[StrengthNode],
-        polarity: Polarity,
-        strength_pct: f32,
-        _max_boost_db: f32,
-        _max_cut_db: f32,
-        x: f32,
-        y: f32,
-    ) -> Option<u64> {
-        let mut best = None;
-        let mut best_d = crate::strength::NODE_HIT_R;
-        for node in nodes {
-            let nx = self.freq_to_x(node.freq);
-            let ny = self.strength_y(polarity, strength_pct, node.weight);
-            let d = ((x - nx).powi(2) + (y - ny).powi(2)).sqrt();
-            let rings = (node.radius / 2) as f32;
-            let hit_r = crate::strength::NODE_HIT_R.max(7.0 + rings * 3.5);
-            if d <= hit_r && d <= best_d {
-                best_d = d;
-                best = Some(node.id);
-            }
-        }
-        best
-    }
-
-    pub fn draw_tilt_curve(
-        &self,
-        d: &mut Draw,
-        tilt_amount: f64,
-        tilt_freq_hz: f64,
-        srate: f64,
-        low_cut_hz: f64,
-        high_cut_hz: f64,
-    ) {
-        if tilt_amount.abs() <= 0.001 {
-            return;
-        }
-
-        let steps = 180;
-        let mut points = Vec::with_capacity(steps + 1);
-
-        for i in 0..=steps {
-            let norm = i as f64 / steps as f64;
-            let freq = flattery_pos_to_freq(norm, self.min_freq, self.max_freq);
-            let mult =
-                calculate_tilt_multiplier_scaled(freq, tilt_freq_hz, tilt_amount * 0.01, srate);
-            let db = linear_to_db(mult);
-            let y = self.zero_y() - (db / 12.0) as f32 * (self.gh * 0.25);
-            let x = self.gx + norm as f32 * self.gw;
-            points.push((x, y));
-        }
-
-        draw_split_poly(
-            d,
-            &points,
-            self.freq_to_x(low_cut_hz),
-            self.freq_to_x(high_cut_hz),
-            COLOR_TILT,
-            1.8,
-        );
-    }
-
-    pub fn draw_tilt_handle(
-        &self,
-        d: &mut Draw,
-        tilt_amount: f64,
-        tilt_freq_hz: f64,
-        srate: f64,
-        hover: bool,
-    ) {
-        let x = self.freq_to_x(tilt_freq_hz);
-        let mult =
-            calculate_tilt_multiplier_scaled(tilt_freq_hz, tilt_freq_hz, tilt_amount * 0.01, srate);
-        let db = linear_to_db(mult);
-        let y = self.zero_y() - (db / 12.0) as f32 * (self.gh * 0.25);
-
-        d.circle(x, y, 7.0, rgb(160, 45, 175), true);
-        d.circle(
-            x,
-            y,
-            3.5,
-            if hover {
-                rgb(255, 255, 255)
-            } else {
-                rgb(220, 220, 220)
-            },
-            true,
-        );
-    }
-
-    pub fn draw_cut_handles(
-        &self,
-        d: &mut Draw,
-        low_cut_hz: f64,
-        high_cut_hz: f64,
-        hover_low: bool,
-        hover_high: bool,
-    ) {
-        let low_x = self.freq_to_x(low_cut_hz);
-        let high_x = self.freq_to_x(high_cut_hz);
-
-        let color_low = if hover_low {
-            COLOR_LOW_CUT_HOVER
-        } else {
-            COLOR_LOW_CUT
-        };
-        let color_high = if hover_high {
-            COLOR_HIGH_CUT_HOVER
-        } else {
-            COLOR_HIGH_CUT
-        };
-
-        d.line(low_x, self.gy, low_x, self.gy + self.gh, color_low, 2.5);
-        d.tag_handle(low_x, self.gy, TagPointer::Down, color_low);
-
-        d.line(high_x, self.gy, high_x, self.gy + self.gh, color_high, 2.5);
-        d.tag_handle(high_x, self.gy, TagPointer::Down, color_high);
-    }
-
-    pub fn hit_cut_line(&self, x: f32, y: f32, cut_x: f32) -> bool {
-        let line_hit = (x - cut_x).abs() <= HIT_DIST && y >= self.gy && y <= self.gy + self.gh;
-        line_hit || tag_contains(cut_x, self.gy, TagPointer::Down, x, y)
-    }
 }
+
+mod draw;
+mod hit;
 
 #[cfg(test)]
 mod tests {
@@ -1263,6 +643,15 @@ mod tests {
         assert!((snap_to_bin_edge(149.0, bin_hz) - 100.0).abs() < 1e-9);
         assert!((snap_to_bin_edge(150.0, bin_hz) - 200.0).abs() < 1e-9);
         assert_eq!(snap_to_bin_edge(440.0, 0.0), 440.0);
+    }
+
+    #[test]
+    fn snap_to_bin_center_uses_half_bin() {
+        let bin_hz = 100.0;
+        assert!((snap_to_bin_center(149.0, bin_hz) - 150.0).abs() < 1e-9);
+        assert!((snap_to_bin_center(150.0, bin_hz) - 150.0).abs() < 1e-9);
+        assert!((snap_to_bin_center(200.0, bin_hz) - 250.0).abs() < 1e-9);
+        assert_eq!(snap_to_bin_center(440.0, 0.0), 440.0);
     }
 
     fn strength_tag_is_grabbable_left_of_graph() {

@@ -124,10 +124,37 @@ pub struct FlatteryParams {
     pub bypass: BoolParam,
 }
 
+impl FlatteryParams {
+    pub fn process_settings(&self) -> crate::dsp::EngineSettings {
+        crate::dsp::EngineSettings {
+            fft_size: self.fft_size.value().size(),
+            bypassed: self.bypass.value(),
+            low_cut_hz: self.low_cut_hz.value() as f64,
+            high_cut_hz: self.high_cut_hz.value() as f64,
+            tilt: self.tilt.value() as f64,
+            tilt_frequency_hz: self.tilt_freq_hz.value() as f64,
+            max_boost_db: self.max_boost_db.value() as f64,
+            max_cut_db: self.max_cut_db.value() as f64,
+            output_gain_db: self.output_gain_db.value() as f64,
+            mid_side: self.ms_mode.value() == ProcessDomain::MS,
+            input_rms_ms: self.input_rms_ms.value() as f64,
+            minimum_operating_db: self.min_operate_db.value() as f64,
+            maximum_operating_db: self.max_operate_db.value() as f64,
+            boost_strength: self.strength_boost.value() as f64,
+            cut_strength: self.strength_cut.value() as f64,
+            stereo_link: self.stereo_link.value() as f64,
+            neighbor_radius: self.neighbor_radius.value() as usize,
+            amplify: self.amplify_mode.value() == DifferenceMode::Amplify,
+            attack_ms: self.attack_ms.value() as f64,
+            release_ms: self.release_ms.value() as f64,
+        }
+    }
+}
+
 impl Default for FlatteryParams {
     fn default() -> Self {
         Self {
-            editor_state: ViziaState::new_screen_sized(|| (1040, 660)),
+            editor_state: ViziaState::new_screen_sized("Flattery", || (1040, 660)),
             boost_nodes: Arc::new(Mutex::new(Vec::new())),
             cut_nodes: Arc::new(Mutex::new(Vec::new())),
             fft_size: EnumParam::new("FFT Size", FftSize::Fft512),

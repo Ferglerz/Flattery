@@ -8,14 +8,39 @@ use crate::{
         telemetry::Shared,
         tilt::{apply_tilt_compensation, calculate_tilt_multiplier_scaled},
     },
-    params::{DifferenceMode, FlatteryParams, ProcessDomain},
     strength::{fill_bin_radii, fill_bin_weights, StrengthNode},
 };
-use pleasant_ui::{
-    math::{db_to_linear, linear_to_db},
+use pleasant_dsp::{
     spectrum::{peak_hold, spectrum_fall_db},
+    units::{db_to_linear, linear_to_db},
 };
-use std::sync::{atomic::Ordering, Arc, Mutex};
+use std::sync::{atomic::Ordering, Arc};
+
+const FFT_SIZES: [usize; 7] = [128, 256, 512, 1024, 2048, 4096, 8192];
+
+#[derive(Clone, Copy, Debug)]
+pub struct EngineSettings {
+    pub fft_size: usize,
+    pub bypassed: bool,
+    pub low_cut_hz: f64,
+    pub high_cut_hz: f64,
+    pub tilt: f64,
+    pub tilt_frequency_hz: f64,
+    pub max_boost_db: f64,
+    pub max_cut_db: f64,
+    pub output_gain_db: f64,
+    pub mid_side: bool,
+    pub input_rms_ms: f64,
+    pub minimum_operating_db: f64,
+    pub maximum_operating_db: f64,
+    pub boost_strength: f64,
+    pub cut_strength: f64,
+    pub stereo_link: f64,
+    pub neighbor_radius: usize,
+    pub amplify: bool,
+    pub attack_ms: f64,
+    pub release_ms: f64,
+}
 
 pub struct Engine {
     pub shared: Arc<Shared>,
@@ -29,6 +54,7 @@ pub struct Engine {
     ring_l: AnalysisRing,
     ring_r: AnalysisRing,
     analyzer: FftAnalyzer,
+    prepared_analyzers: Vec<FftAnalyzer>,
     leveler: LevelingProcessor,
     filter_bank: FilterBank,
     window_samples_l: Vec<f64>,
@@ -38,6 +64,8 @@ pub struct Engine {
     cut_weights: Vec<f64>,
     boost_radii: Vec<usize>,
     cut_radii: Vec<usize>,
+    boost_nodes: Arc<[StrengthNode]>,
+    cut_nodes: Arc<[StrengthNode]>,
 }
 
 impl Engine {
@@ -48,6 +76,13 @@ impl Engine {
 
         let mut filter_bank = FilterBank::new();
         filter_bank.init_frequencies(fft_size, sample_rate);
+        let prepared_analyzers = FFT_SIZES
+            .into_iter()
+            .filter(|size| *size != fft_size)
+            .map(FftAnalyzer::new)
+            .collect();
+        let boost_nodes = shared.node_snapshot(true).unwrap_or_else(|| Arc::from([]));
+        let cut_nodes = shared.node_snapshot(false).unwrap_or_else(|| Arc::from([]));
 
         Self {
             shared,
@@ -61,15 +96,18 @@ impl Engine {
             ring_l: AnalysisRing::new(),
             ring_r: AnalysisRing::new(),
             analyzer: FftAnalyzer::new(fft_size),
+            prepared_analyzers,
             leveler: LevelingProcessor::new(),
             filter_bank,
             window_samples_l: vec![0.0; MAX_FFT_SIZE],
             window_samples_r: vec![0.0; MAX_FFT_SIZE],
-            target_gains: vec![1.0; 1024],
-            boost_weights: vec![1.0; 1024],
-            cut_weights: vec![1.0; 1024],
-            boost_radii: vec![1; 1024],
-            cut_radii: vec![1; 1024],
+            target_gains: vec![1.0; MAX_FFT_SIZE / 2],
+            boost_weights: vec![1.0; MAX_FFT_SIZE / 2],
+            cut_weights: vec![1.0; MAX_FFT_SIZE / 2],
+            boost_radii: vec![1; MAX_FFT_SIZE / 2],
+            cut_radii: vec![1; MAX_FFT_SIZE / 2],
+            boost_nodes,
+            cut_nodes,
         }
     }
 
@@ -95,11 +133,19 @@ impl Engine {
         if self.fft_size == new_size {
             return;
         }
+        let Some(index) = self
+            .prepared_analyzers
+            .iter()
+            .position(|analyzer| analyzer.fft_size == new_size)
+        else {
+            return;
+        };
+        std::mem::swap(&mut self.analyzer, &mut self.prepared_analyzers[index]);
+        self.analyzer.reset();
         self.fft_size = new_size;
         self.hop_size = new_size / 2;
         self.analysis_delay = self.hop_size;
         self.hop_counter = 0;
-        self.analyzer.resize(new_size);
         self.filter_bank
             .init_frequencies(new_size, self.sample_rate);
         self.shared.fft_size.store(new_size, Ordering::Relaxed);
@@ -113,22 +159,21 @@ impl Engine {
             .store(srate as f32, Ordering::Relaxed);
     }
 
-    pub fn tick(&mut self, in_l: f64, in_r: f64, params: &FlatteryParams) -> (f64, f64) {
-        let current_fft_size = params.fft_size.value().size();
-        if current_fft_size != self.fft_size {
-            self.set_fft_size(current_fft_size);
+    pub fn tick(&mut self, in_l: f64, in_r: f64, settings: &EngineSettings) -> (f64, f64) {
+        if settings.fft_size != self.fft_size {
+            self.set_fft_size(settings.fft_size);
         }
 
-        let bypassed = params.bypass.value();
+        let bypassed = settings.bypassed;
         self.shared.is_bypassed.store(bypassed, Ordering::Relaxed);
 
-        let low_cut_hz = params.low_cut_hz.value() as f64;
-        let high_cut_hz = params.high_cut_hz.value() as f64;
-        let tilt = params.tilt.value() as f64;
-        let tilt_freq_hz = params.tilt_freq_hz.value() as f64;
-        let max_boost_db = params.max_boost_db.value() as f64;
-        let max_cut_db = params.max_cut_db.value() as f64;
-        let output_gain_db = params.output_gain_db.value() as f64;
+        let low_cut_hz = settings.low_cut_hz;
+        let high_cut_hz = settings.high_cut_hz;
+        let tilt = settings.tilt;
+        let tilt_freq_hz = settings.tilt_frequency_hz;
+        let max_boost_db = settings.max_boost_db;
+        let max_cut_db = settings.max_cut_db;
+        let output_gain_db = settings.output_gain_db;
 
         // Push to analysis rings
         self.ring_l.push(in_l);
@@ -149,8 +194,8 @@ impl Engine {
             self.ring_l.read_window(n, &mut self.window_samples_l[..n]);
             self.ring_r.read_window(n, &mut self.window_samples_r[..n]);
 
-            let is_ms = params.ms_mode.value() == ProcessDomain::MS;
-            let input_rms_ms = params.input_rms_ms.value() as f64;
+            let is_ms = settings.mid_side;
+            let input_rms_ms = settings.input_rms_ms;
 
             self.analyzer.analyze(
                 &self.window_samples_l[..n],
@@ -163,27 +208,23 @@ impl Engine {
             let low_cut_bin = (low_cut_hz / bin_hz.max(1e-6)).floor() as usize;
             let high_cut_bin = (high_cut_hz / bin_hz.max(1e-6)).floor() as usize;
 
-            let min_operate_lin = db_to_linear(params.min_operate_db.value() as f64);
-            let max_operate_lin = db_to_linear(params.max_operate_db.value() as f64);
+            let min_operate_lin = db_to_linear(settings.minimum_operating_db);
+            let max_operate_lin = db_to_linear(settings.maximum_operating_db);
 
-            let str_boost = params.strength_boost.value() as f64;
-            let str_cut = params.strength_cut.value() as f64;
-            let stereo_link = params.stereo_link.value() as f64;
-            let default_radius = params.neighbor_radius.value() as usize;
-            let amplify = params.amplify_mode.value() == DifferenceMode::Amplify;
-            let att_ms = params.attack_ms.value() as f64;
-            let rel_ms = params.release_ms.value() as f64;
+            let str_boost = settings.boost_strength;
+            let str_cut = settings.cut_strength;
+            let stereo_link = settings.stereo_link;
+            let default_radius = settings.neighbor_radius;
+            let amplify = settings.amplify;
+            let att_ms = settings.attack_ms;
+            let rel_ms = settings.release_ms;
 
-            if self.boost_weights.len() < half {
-                self.boost_weights.resize(half, 1.0);
-                self.cut_weights.resize(half, 1.0);
-                self.boost_radii.resize(half, 1);
-                self.cut_radii.resize(half, 1);
-            }
-            let boost_nodes = snapshot_nodes(&params.boost_nodes);
-            let cut_nodes = snapshot_nodes(&params.cut_nodes);
+            self.shared
+                .refresh_node_snapshot(true, &mut self.boost_nodes);
+            self.shared
+                .refresh_node_snapshot(false, &mut self.cut_nodes);
             fill_bin_weights(
-                &boost_nodes,
+                &self.boost_nodes,
                 half,
                 bin_hz,
                 10.0,
@@ -191,7 +232,7 @@ impl Engine {
                 &mut self.boost_weights,
             );
             fill_bin_weights(
-                &cut_nodes,
+                &self.cut_nodes,
                 half,
                 bin_hz,
                 10.0,
@@ -199,14 +240,14 @@ impl Engine {
                 &mut self.cut_weights,
             );
             fill_bin_radii(
-                &boost_nodes,
+                &self.boost_nodes,
                 half,
                 bin_hz,
                 default_radius,
                 &mut self.boost_radii,
             );
             fill_bin_radii(
-                &cut_nodes,
+                &self.cut_nodes,
                 half,
                 bin_hz,
                 default_radius,
@@ -238,9 +279,6 @@ impl Engine {
 
             // Map leveler gains to filter bank
             let filter_count = self.filter_bank.filters.len();
-            if self.target_gains.len() < filter_count {
-                self.target_gains.resize(filter_count, 1.0);
-            }
 
             let tilt_amount = tilt * 0.01;
             let is_linked = stereo_link >= 99.5;
@@ -310,12 +348,5 @@ impl Engine {
         let (wet_l, wet_r) = self.filter_bank.process(delayed_l, delayed_r);
         let out_gain = db_to_linear(output_gain_db);
         (wet_l * out_gain, wet_r * out_gain)
-    }
-}
-
-fn snapshot_nodes(nodes: &Mutex<Vec<StrengthNode>>) -> Vec<StrengthNode> {
-    match nodes.lock() {
-        Ok(guard) => guard.clone(),
-        Err(poisoned) => poisoned.into_inner().clone(),
     }
 }

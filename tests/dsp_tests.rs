@@ -11,7 +11,7 @@ use flattery::{
     params::FlatteryParams,
 };
 use nih_plug::prelude::Params;
-use pleasant_ui::math::{flattery_freq_to_pos, flattery_pos_to_freq};
+use pleasant_dsp::axis::{flattery_freq_to_pos, flattery_pos_to_freq};
 use std::sync::Arc;
 
 #[test]
@@ -112,11 +112,12 @@ fn test_engine_audio_stream_no_nans() {
     let shared = Arc::new(Shared::new());
     let mut engine = Engine::new(shared, 44100.0);
     let params = FlatteryParams::default();
+    let settings = params.process_settings();
 
     // Send impulse followed by silence
     for i in 0..1024 {
         let input = if i == 0 { 1.0 } else { 0.0 };
-        let (out_l, out_r) = engine.tick(input, input, &params);
+        let (out_l, out_r) = engine.tick(input, input, &settings);
         assert!(
             out_l.is_finite(),
             "Sample {i} produced non-finite L: {out_l}"

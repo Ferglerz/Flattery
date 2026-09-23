@@ -1,5 +1,5 @@
 use crate::dsp::constants::MAX_DISPLAY_BINS;
-use pleasant_ui::math::{db_to_linear, linear_to_db};
+use pleasant_dsp::units::{db_to_linear, linear_to_db};
 
 pub struct LevelingProcessor {
     median_buf: Vec<f64>,
@@ -22,13 +22,6 @@ impl LevelingProcessor {
             smoothed_gain_db_r: vec![0.0; MAX_DISPLAY_BINS],
             smoothed_gain_db_link: vec![0.0; MAX_DISPLAY_BINS],
         }
-    }
-
-    pub fn resize(&mut self, half_fft: usize) {
-        let size = half_fft.min(MAX_DISPLAY_BINS);
-        self.smoothed_gain_db_l.resize(size, 0.0);
-        self.smoothed_gain_db_r.resize(size, 0.0);
-        self.smoothed_gain_db_link.resize(size, 0.0);
     }
 
     pub fn reset(&mut self) {
@@ -86,7 +79,7 @@ impl LevelingProcessor {
         boost_weights: &[f64],
         cut_weights: &[f64],
     ) {
-        self.resize(pos_bin_count);
+        let pos_bin_count = pos_bin_count.min(MAX_DISPLAY_BINS);
         let link_factor = (stereo_link_pct * 0.01).clamp(0.0, 1.0);
         let att_coeff = (-frame_dt / (attack_ms * 0.001).max(1e-6)).exp();
         let rel_coeff = (-frame_dt / (release_ms * 0.001).max(1e-6)).exp();

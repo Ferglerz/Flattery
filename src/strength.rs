@@ -1,4 +1,4 @@
-use pleasant_ui::math::bell_influence;
+use pleasant_dsp::axis::bell_influence;
 use serde::{Deserialize, Serialize};
 
 pub const STRENGTH_REST_PX: f32 = 10.0;

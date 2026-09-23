@@ -1,4 +1,7 @@
-use pleasant_ui::math::{db_to_linear, flattery_freq_to_pos, linear_to_db};
+use pleasant_dsp::{
+    axis::flattery_freq_to_pos,
+    units::{db_to_linear, linear_to_db},
+};
 
 pub const TILT_LOW_MULT: f64 = 0.25;
 pub const TILT_HIGH_MULT: f64 = 4.0;

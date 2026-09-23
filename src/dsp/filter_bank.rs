@@ -5,7 +5,7 @@ use crate::dsp::{
         RATE_OF_CHANGE_THRESHOLD_DB,
     },
 };
-use pleasant_ui::math::{db_to_linear, linear_to_db};
+use pleasant_dsp::units::{db_to_linear, linear_to_db};
 
 pub struct FilterBank {
     pub filters: Vec<PeakingFilter>,

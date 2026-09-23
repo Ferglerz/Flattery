@@ -19,10 +19,27 @@ impl Default for Flattery {
     fn default() -> Self {
         let params = Arc::new(FlatteryParams::default());
         let shared = Arc::new(Shared::new());
-        Self {
+        let plugin = Self {
             params,
             engine: Engine::new(shared.clone(), 44100.0),
             shared,
+        };
+        plugin.publish_node_snapshots();
+        plugin
+    }
+}
+
+impl Flattery {
+    fn publish_node_snapshots(&self) {
+        for (boost, nodes) in [
+            (true, &self.params.boost_nodes),
+            (false, &self.params.cut_nodes),
+        ] {
+            let snapshot: Arc<[strength::StrengthNode]> = match nodes.lock() {
+                Ok(nodes) => Arc::from(nodes.clone()),
+                Err(poisoned) => Arc::from(poisoned.into_inner().clone()),
+            };
+            self.shared.publish_nodes(boost, snapshot);
         }
     }
 }
@@ -66,6 +83,7 @@ impl Plugin for Flattery {
         c: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
+        self.publish_node_snapshots();
         self.engine = Engine::new(self.shared.clone(), c.sample_rate as f64);
         context.set_latency_samples(self.engine.latency());
         true
@@ -92,7 +110,8 @@ impl Plugin for Flattery {
                 x[1] = x[0];
             }
 
-            let out = self.engine.tick(x[0], x[1], &self.params);
+            let settings = self.params.process_settings();
+            let out = self.engine.tick(x[0], x[1], &settings);
 
             for (i, s) in frame.iter_mut().enumerate() {
                 *s = if i == 0 { out.0 as f32 } else { out.1 as f32 };

@@ -8,5 +8,5 @@ pub mod ring_buffer;
 pub mod telemetry;
 pub mod tilt;
 
-pub use engine::Engine;
+pub use engine::{Engine, EngineSettings};
 pub use telemetry::Shared;
