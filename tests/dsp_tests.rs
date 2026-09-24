@@ -99,6 +99,30 @@ fn test_filter_bank_unity_transparency() {
 }
 
 #[test]
+fn test_filter_bank_cutoffs_outside_filter_centers() {
+    let mut bank = FilterBank::new();
+    bank.init_frequencies(512, 44100.0);
+    let targets = vec![2.0; bank.filters.len()];
+
+    assert!(bank.filters.first().unwrap().center_hz > 20.0);
+    bank.set_filter_gains(&targets, 44100.0, 10.0, 20.0);
+    assert!(bank.all_unity);
+    assert!(bank.filters.iter().all(|filter| filter.gain_linear == 1.0));
+
+    assert!(bank.filters.last().unwrap().center_hz < 20000.0);
+    bank.set_filter_gains(&targets, 44100.0, 20000.0, 20000.0);
+    assert!(bank.all_unity);
+    assert!(bank.filters.iter().all(|filter| filter.gain_linear == 1.0));
+
+    bank.set_filter_gains(&targets, 44100.0, 100.0, 1000.0);
+    assert!(!bank.all_unity);
+    for filter in &bank.filters {
+        let in_range = (100.0..=1000.0).contains(&filter.center_hz);
+        assert_eq!(filter.gain_linear > 1.0, in_range);
+    }
+}
+
+#[test]
 fn test_peaking_filter_transparency() {
     let mut filter = PeakingFilter::new(1000.0);
     filter.update_coeffs(44100.0, 10.0);
@@ -127,6 +151,32 @@ fn test_engine_audio_stream_no_nans() {
             "Sample {i} produced non-finite R: {out_r}"
         );
     }
+}
+
+#[test]
+fn test_output_gain_change_takes_effect_on_next_sample() {
+    let shared = Arc::new(Shared::new());
+    let mut engine = Engine::new(shared, 44100.0);
+    let mut settings = FlatteryParams::default().process_settings();
+    settings.boost_strength = 0.0;
+    settings.cut_strength = 0.0;
+
+    for _ in 0..300 {
+        engine.tick(0.5, -0.25, &settings);
+    }
+    assert_eq!(engine.tick(0.5, -0.25, &settings), (0.5, -0.25));
+
+    settings.output_gain_db = 6.0;
+    let boosted = engine.tick(0.5, -0.25, &settings);
+    let boost = pleasant_dsp::units::db_to_linear(6.0);
+    assert!((boosted.0 - 0.5 * boost).abs() < 1.0e-12);
+    assert!((boosted.1 + 0.25 * boost).abs() < 1.0e-12);
+
+    settings.output_gain_db = -6.0;
+    let cut = engine.tick(0.5, -0.25, &settings);
+    let attenuation = pleasant_dsp::units::db_to_linear(-6.0);
+    assert!((cut.0 - 0.5 * attenuation).abs() < 1.0e-12);
+    assert!((cut.1 + 0.25 * attenuation).abs() < 1.0e-12);
 }
 
 #[test]

@@ -10,6 +10,57 @@ impl FlatteryView {
             self.mouse = (mouse_x, mouse_y);
             self.sync_scale();
 
+            if let WindowEvent::MouseScroll(_, dy) = window_event {
+                if *dy != 0.0 {
+                    if let Some(id) = self.readout_at(mouse_x, mouse_y) {
+                        if self.edit.is_some() { self.commit_edit(cx); }
+                        let step = if id == SliderId::NodeRadius { dy.signum() / 11.0 } else { *dy * if cx.modifiers().shift() {0.001} else {0.01} };
+                        self.set_slider_norm(cx, id, (self.get_slider_norm(id) + step).clamp(0.0, 1.0));
+                        meta.consume();
+                        cx.needs_redraw();
+                        return;
+                    }
+                }
+            }
+
+            if let Some(mut press) = self.value_press {
+                match window_event {
+                    WindowEvent::MouseMove(_, _) => {
+                        if press.update(mouse_x, mouse_y) {
+                            self.value_press = None;
+                            self.drag = Some(DragState::Value {
+                                id: press.target,
+                                start_x: press.origin.0,
+                                start_y: press.origin.1,
+                                start_norm: self.get_slider_norm(press.target),
+                            });
+                        } else {
+                            self.value_press = Some(press);
+                            return;
+                        }
+                    }
+                    WindowEvent::MouseUp(MouseButton::Left) => {
+                        self.value_press = None;
+                        cx.release();
+                        if press.released_as_click(mouse_x, mouse_y) {
+                            let (_, value, _) = self.slider_info(press.target);
+                            self.start_edit(cx, press.target, press.rect, value);
+                        }
+                        meta.consume();
+                        cx.needs_redraw();
+                        return;
+                    }
+                    WindowEvent::FocusOut
+                    | WindowEvent::KeyDown(Code::Escape, _)
+                    | WindowEvent::MouseDown(MouseButton::Right) => {
+                        self.value_press = None;
+                        cx.release();
+                        cx.needs_redraw();
+                        return;
+                    }
+                    _ => return,
+                }
+            }
             if self.edit.is_some() {
                 match window_event {
                     WindowEvent::CharInput(c) => {
@@ -162,8 +213,7 @@ impl FlatteryView {
                         let r = Self::slider_rect(id);
                         let val_r = slider_value_rect(r);
                         if Self::inside(mouse_x, mouse_y, val_r) {
-                            let (_, val_str, _) = self.slider_info(id);
-                            self.start_edit(cx, id, val_r, val_str);
+                            self.press_value(cx, id, val_r, (mouse_x, mouse_y));
                             cx.needs_redraw();
                             return;
                         }
@@ -176,12 +226,11 @@ impl FlatteryView {
                     }
 
                     if Self::inside(mouse_x, mouse_y, Self::output_knob_value_rect()) {
-                        let (_, val_str, _) = self.slider_info(SliderId::OutputGain);
-                        self.start_edit(
+                        self.press_value(
                             cx,
                             SliderId::OutputGain,
                             Self::output_knob_value_rect(),
-                            val_str,
+                            (mouse_x, mouse_y),
                         );
                         cx.needs_redraw();
                         return;
@@ -202,8 +251,7 @@ impl FlatteryView {
                             let r = Self::slider_rect(id);
                             let val_r = slider_value_rect(r);
                             if Self::inside(mouse_x, mouse_y, val_r) {
-                                let (_, val_str, _) = self.slider_info(id);
-                                self.start_edit(cx, id, val_r, val_str);
+                                self.press_value(cx, id, val_r, (mouse_x, mouse_y));
                                 cx.needs_redraw();
                                 return;
                             }
@@ -520,8 +568,9 @@ impl FlatteryView {
                     }
                 }
 
-                WindowEvent::MouseUp(MouseButton::Left) => {
+                WindowEvent::MouseUp(MouseButton::Left) | WindowEvent::FocusOut => {
                     self.drag = None;
+                    cx.release();
                     cx.needs_redraw();
                 }
 
@@ -690,6 +739,11 @@ impl FlatteryView {
                                 });
                                 cx.needs_redraw();
                             }
+                        DragState::Value { id, start_x, start_y, start_norm } => {
+                            let delta = pleasant_ui::pointer::readout_drag_delta(mouse_x - start_x, mouse_y - start_y, cx.modifiers().shift());
+                            self.set_slider_norm(cx, id, (start_norm + delta).clamp(0.0, 1.0));
+                            cx.needs_redraw();
+                        }
                             DragState::Slider { id } => {
                                 self.set_slider_from_x(cx, id, mouse_x);
                                 cx.needs_redraw();

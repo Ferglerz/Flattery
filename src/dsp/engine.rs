@@ -66,6 +66,8 @@ pub struct Engine {
     cut_radii: Vec<usize>,
     boost_nodes: Arc<[StrengthNode]>,
     cut_nodes: Arc<[StrengthNode]>,
+    last_output_gain_db: f64,
+    output_gain_linear: f64,
 }
 
 impl Engine {
@@ -108,6 +110,8 @@ impl Engine {
             cut_radii: vec![1; MAX_FFT_SIZE / 2],
             boost_nodes,
             cut_nodes,
+            last_output_gain_db: 0.0,
+            output_gain_linear: 1.0,
         }
     }
 
@@ -346,7 +350,13 @@ impl Engine {
         }
 
         let (wet_l, wet_r) = self.filter_bank.process(delayed_l, delayed_r);
-        let out_gain = db_to_linear(output_gain_db);
-        (wet_l * out_gain, wet_r * out_gain)
+        if output_gain_db != self.last_output_gain_db {
+            self.output_gain_linear = db_to_linear(output_gain_db);
+            self.last_output_gain_db = output_gain_db;
+        }
+        (
+            wet_l * self.output_gain_linear,
+            wet_r * self.output_gain_linear,
+        )
     }
 }

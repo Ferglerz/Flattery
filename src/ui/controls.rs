@@ -24,7 +24,7 @@ impl FlatteryView {
         let gap = 8.0;
         let w = (GRAPH_W - gap * 3.0) / 4.0;
         let x = GRAPH_X + idx as f32 * (w + gap);
-        (x, GRAPH_Y + GRAPH_H, w, AXIS_STRIP_H)
+        (x, GRAPH_Y + GRAPH_H + NODE_ROW_GAP, w, AXIS_STRIP_H)
     }
 
     pub(super) fn slider_rect(id: SliderId) -> (f32, f32, f32, f32) {
@@ -287,6 +287,12 @@ impl FlatteryView {
         }
     }
 
+    pub(super) fn readout_at(&self, x: f32, y: f32) -> Option<SliderId> {
+        if Self::inside(x, y, Self::output_knob_value_rect()) { return Some(SliderId::OutputGain); }
+        STACKED_SLIDERS.iter().copied().chain(NODE_SLIDERS.iter().copied().filter(|_| self.selected.is_some()))
+            .find(|id| Self::inside(x, y, slider_value_rect(Self::slider_rect(*id))))
+    }
+
     pub(super) fn set_slider_from_x(&self, cx: &mut EventContext, id: SliderId, mouse_x: f32) {
         let r = Self::slider_rect(id);
         let node = matches!(
@@ -297,6 +303,11 @@ impl FlatteryView {
         let bar_x = r.0 + inset;
         let bar_w = (r.2 - inset * 2.0).max(1.0);
         let raw_norm = ((mouse_x - bar_x) / bar_w).clamp(0.0, 1.0);
+        self.set_slider_norm(cx, id, raw_norm);
+    }
+
+    pub(super) fn set_slider_norm(&self, cx: &mut EventContext, id: SliderId, raw_norm: f32) {
+        let raw_norm = raw_norm.clamp(0.0, 1.0);
         match id {
             SliderId::Attack => {
                 let val = self.params.attack_ms.preview_plain(raw_norm);

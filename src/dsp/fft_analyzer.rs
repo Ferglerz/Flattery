@@ -10,6 +10,7 @@ pub struct FftAnalyzer {
     window: Vec<f64>,
     input_l: Vec<Complex64>,
     input_r: Vec<Complex64>,
+    scratch: Vec<Complex64>,
     pub mag_l: Vec<f64>,
     pub mag_r: Vec<f64>,
     rms_state_l: Vec<f64>,
@@ -20,6 +21,7 @@ impl FftAnalyzer {
     pub fn new(fft_size: usize) -> Self {
         let mut planner = FftPlanner::new();
         let fft = planner.plan_fft_forward(fft_size);
+        let scratch = vec![Complex64::default(); fft.get_inplace_scratch_len()];
         let window = Self::make_hann_window(fft_size);
         let half = fft_size / 2;
 
@@ -29,6 +31,7 @@ impl FftAnalyzer {
             window,
             input_l: vec![Complex64::default(); fft_size],
             input_r: vec![Complex64::default(); fft_size],
+            scratch,
             mag_l: vec![0.0; half],
             mag_r: vec![0.0; half],
             rms_state_l: vec![0.0; half],
@@ -42,6 +45,7 @@ impl FftAnalyzer {
         }
         let mut planner = FftPlanner::new();
         self.fft = planner.plan_fft_forward(new_size);
+        self.scratch = vec![Complex64::default(); self.fft.get_inplace_scratch_len()];
         self.fft_size = new_size;
         self.window = Self::make_hann_window(new_size);
         self.input_l = vec![Complex64::default(); new_size];
@@ -111,8 +115,10 @@ impl FftAnalyzer {
             }
         }
 
-        self.fft.process(&mut self.input_l);
-        self.fft.process(&mut self.input_r);
+        self.fft
+            .process_with_scratch(&mut self.input_l, &mut self.scratch);
+        self.fft
+            .process_with_scratch(&mut self.input_r, &mut self.scratch);
 
         for k in 0..half {
             let cl = self.input_l[k];

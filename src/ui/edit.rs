@@ -1,6 +1,18 @@
 use super::*;
 
 impl FlatteryView {
+    pub(super) fn press_value(
+        &mut self,
+        cx: &mut EventContext,
+        target: SliderId,
+        rect: (f32, f32, f32, f32),
+        origin: (f32, f32),
+    ) {
+        self.value_press = Some(pleasant_ui::pointer::ValuePress::new(target, rect, origin));
+        cx.focus();
+        cx.capture();
+    }
+
     pub(super) fn start_edit(
         &mut self,
         cx: &mut EventContext,
@@ -104,5 +116,4 @@ impl FlatteryView {
             }
         }
     }
-
 }

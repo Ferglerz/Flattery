@@ -65,22 +65,18 @@ impl FilterBank {
 
     pub fn update_active_range(&mut self, low_cut_hz: f64, high_cut_hz: f64) {
         let count = self.filters.len();
-        let mut start = 0;
-        for (i, f) in self.filters.iter().enumerate() {
-            if f.center_hz >= low_cut_hz {
-                start = i;
-                break;
-            }
-        }
-        let mut end = count;
-        for i in (0..count).rev() {
-            if self.filters[i].center_hz <= high_cut_hz {
-                end = i + 1;
-                break;
-            }
-        }
-        self.active_start = start.min(count);
-        self.active_end = end.max(self.active_start).min(count);
+        let start = self
+            .filters
+            .iter()
+            .position(|filter| filter.center_hz >= low_cut_hz)
+            .unwrap_or(count);
+        let end = self
+            .filters
+            .iter()
+            .rposition(|filter| filter.center_hz <= high_cut_hz)
+            .map_or(0, |index| index + 1);
+        self.active_start = start;
+        self.active_end = end.max(start);
     }
 
     pub fn set_filter_gains(

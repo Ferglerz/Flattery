@@ -93,6 +93,7 @@ const NODE_SLIDERS: &[SliderId] = &[
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum DragState {
+    Value { id: SliderId, start_x: f32, start_y: f32, start_norm: f32 },
     LowCut {
         start_x: f32,
         start_val: f32,
@@ -152,6 +153,7 @@ pub struct FlatteryView {
     mouse: (f32, f32),
     hover: Option<(f32, f32)>,
     edit: Option<ValueEdit<SliderId>>,
+    value_press: Option<pleasant_ui::pointer::ValuePress<SliderId>>,
     graph_zoomed: bool,
 }
 

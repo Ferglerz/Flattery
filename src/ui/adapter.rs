@@ -23,6 +23,7 @@ pub(super) fn create(params: Arc<FlatteryParams>, shared: Arc<Shared>) -> Option
                 mouse: (0.0, 0.0),
                 hover: None,
                 edit: None,
+                value_press: None,
                 graph_zoomed: false,
             }
             .build(cx, |cx| {

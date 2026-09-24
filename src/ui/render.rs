@@ -86,12 +86,16 @@ impl FlatteryView {
         } else {
             srate / fft_size as f64
         };
-        let mut boost_tint = COLOR_BOOST;
-        boost_tint.a = 0.09;
-        let mut cut_tint = COLOR_CUT;
-        cut_tint.a = 0.09;
-        layout.draw_radius_bins(&mut d, &boost_nodes, bin_hz, boost_tint);
-        layout.draw_radius_bins(&mut d, &cut_nodes, bin_hz, cut_tint);
+        if let Some((polarity, id)) = self.selected {
+            let (nodes, mut tint) = match polarity {
+                Polarity::Boost => (&boost_nodes, COLOR_BOOST),
+                Polarity::Cut => (&cut_nodes, COLOR_CUT),
+            };
+            if let Some(node) = nodes.iter().find(|node| node.id == id) {
+                tint.a = 0.09;
+                layout.draw_radius_bins(&mut d, std::slice::from_ref(node), bin_hz, tint);
+            }
+        }
         let selected_boost =
             self.selected
                 .and_then(|(p, id)| if p == Polarity::Boost { Some(id) } else { None });
