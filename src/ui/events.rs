@@ -13,9 +13,19 @@ impl FlatteryView {
             if let WindowEvent::MouseScroll(_, dy) = window_event {
                 if *dy != 0.0 {
                     if let Some(id) = self.readout_at(mouse_x, mouse_y) {
-                        if self.edit.is_some() { self.commit_edit(cx); }
-                        let step = if id == SliderId::NodeRadius { dy.signum() / 11.0 } else { *dy * if cx.modifiers().shift() {0.001} else {0.01} };
-                        self.set_slider_norm(cx, id, (self.get_slider_norm(id) + step).clamp(0.0, 1.0));
+                        if self.edit.is_some() {
+                            self.commit_edit(cx);
+                        }
+                        let step = if id == SliderId::NodeRadius {
+                            dy.signum() / 11.0
+                        } else {
+                            *dy * if cx.modifiers().shift() { 0.001 } else { 0.01 }
+                        };
+                        self.set_slider_norm(
+                            cx,
+                            id,
+                            (self.get_slider_norm(id) + step).clamp(0.0, 1.0),
+                        );
                         meta.consume();
                         cx.needs_redraw();
                         return;
@@ -211,15 +221,19 @@ impl FlatteryView {
 
                     for &id in STACKED_SLIDERS {
                         let r = Self::slider_rect(id);
-                        let val_r = slider_value_rect(r);
+                        let val_r = Self::knob_value_rect(id);
                         if Self::inside(mouse_x, mouse_y, val_r) {
                             self.press_value(cx, id, val_r, (mouse_x, mouse_y));
                             cx.needs_redraw();
                             return;
                         }
                         if Self::inside(mouse_x, mouse_y, r) {
-                            self.drag = Some(DragState::Slider { id });
-                            self.set_slider_from_x(cx, id, mouse_x);
+                            self.drag = Some(DragState::Knob {
+                                id,
+                                start_y: mouse_y,
+                                start_norm: self.get_slider_norm(id),
+                            });
+                            cx.capture();
                             cx.needs_redraw();
                             return;
                         }
@@ -279,7 +293,11 @@ impl FlatteryView {
                             mouse_y,
                         ) {
                             self.selected = Some((polarity, id));
-                            self.drag = Some(DragState::StrengthNode { polarity, id });
+                            self.drag = Some(DragState::StrengthNode {
+                                polarity,
+                                id,
+                                last_y: mouse_y,
+                            });
                             cx.needs_redraw();
                             return;
                         }
@@ -398,7 +416,11 @@ impl FlatteryView {
                             } else {
                                 let id = self.create_node(polarity, mouse_x);
                                 self.selected = Some((polarity, id));
-                                self.drag = Some(DragState::StrengthNode { polarity, id });
+                                self.drag = Some(DragState::StrengthNode {
+                                    polarity,
+                                    id,
+                                    last_y: mouse_y,
+                                });
                             }
                             cx.needs_redraw();
                             return;
@@ -420,7 +442,7 @@ impl FlatteryView {
 
                     for &id in STACKED_SLIDERS {
                         let r = Self::slider_rect(id);
-                        let val_r = slider_value_rect(r);
+                        let val_r = Self::knob_value_rect(id);
                         if Self::inside(mouse_x, mouse_y, val_r) {
                             continue;
                         }
@@ -723,7 +745,16 @@ impl FlatteryView {
                                 }
                                 cx.needs_redraw();
                             }
-                            DragState::StrengthNode { polarity, id } => {
+                            DragState::StrengthNode {
+                                polarity,
+                                id,
+                                last_y,
+                            } => {
+                                self.drag = Some(DragState::StrengthNode {
+                                    polarity,
+                                    id,
+                                    last_y: mouse_y,
+                                });
                                 let freq = self.snap_hz(self.layout.x_to_freq(mouse_x));
                                 let weight = self.layout.y_to_weight(
                                     polarity,
@@ -732,21 +763,47 @@ impl FlatteryView {
                                 );
                                 self.with_nodes_mut(polarity, |nodes| {
                                     if let Some(node) = nodes.iter_mut().find(|n| n.id == id) {
-                                        node.freq = freq;
-                                        node.weight = weight;
-                                        node.sanitize();
+                                        super::nodes::drag_strength_node(
+                                            node,
+                                            freq,
+                                            weight,
+                                            mouse_y - last_y,
+                                            cx.modifiers().shift(),
+                                        );
                                     }
                                 });
                                 cx.needs_redraw();
                             }
-                        DragState::Value { id, start_x, start_y, start_norm } => {
-                            let delta = pleasant_ui::pointer::readout_drag_delta(mouse_x - start_x, mouse_y - start_y, cx.modifiers().shift());
-                            self.set_slider_norm(cx, id, (start_norm + delta).clamp(0.0, 1.0));
-                            cx.needs_redraw();
-                        }
+                            DragState::Value {
+                                id,
+                                start_x,
+                                start_y,
+                                start_norm,
+                            } => {
+                                let delta = pleasant_ui::pointer::readout_drag_delta(
+                                    mouse_x - start_x,
+                                    mouse_y - start_y,
+                                    cx.modifiers().shift(),
+                                );
+                                self.set_slider_norm(cx, id, (start_norm + delta).clamp(0.0, 1.0));
+                                cx.needs_redraw();
+                            }
                             DragState::Slider { id } => {
                                 self.set_slider_from_x(cx, id, mouse_x);
                                 cx.needs_redraw();
+                            }
+                            DragState::Knob {
+                                id,
+                                start_y,
+                                start_norm,
+                            } => {
+                                let sensitivity =
+                                    if cx.modifiers().shift() { 0.001 } else { 0.005 };
+                                self.set_slider_norm(
+                                    cx,
+                                    id,
+                                    start_norm + (start_y - mouse_y) * sensitivity,
+                                );
                             }
                             DragState::OutputGainKnob { start_y, start_val } => {
                                 let delta_y = start_y - mouse_y;

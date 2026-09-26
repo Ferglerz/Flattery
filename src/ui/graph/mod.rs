@@ -10,20 +10,22 @@ use pleasant_ui::{
 };
 
 pub const WINDOW_W: f32 = 1040.0;
-pub const WINDOW_H: f32 = 660.0;
+pub const WINDOW_H: f32 = 860.0;
 /// Matches header-to-graph gap (`GRAPH_Y - 70`).
-pub const EDGE_PAD: f32 = 56.0;
+pub const EDGE_PAD: f32 = 72.0;
 pub const GRAPH_X: f32 = EDGE_PAD;
 pub const GRAPH_Y: f32 = 70.0 + EDGE_PAD;
-pub const SIDE_W: f32 = 168.0;
+pub const SIDE_Y: f32 = 126.0;
+pub const SIDE_W: f32 = 120.0;
+pub const RIGHT_PAD: f32 = 30.0;
 pub const DB_LABEL_GUTTER: f32 = 40.0;
 pub const SIDE_GAP: f32 = 8.0;
-pub const GRAPH_W: f32 = WINDOW_W - GRAPH_X - DB_LABEL_GUTTER - SIDE_GAP - SIDE_W - EDGE_PAD;
+pub const GRAPH_W: f32 = WINDOW_W - GRAPH_X - DB_LABEL_GUTTER - SIDE_GAP - SIDE_W - RIGHT_PAD;
 pub const FREQ_LABEL_SPACE: f32 = 26.0;
 /// Selected-node strip that replaces the frequency-axis labels.
 pub const AXIS_STRIP_H: f32 = 40.0;
 pub const NODE_SLIDER_H: f32 = 50.0;
-pub const GRAPH_H: f32 = WINDOW_H - GRAPH_Y - FREQ_LABEL_SPACE - NODE_SLIDER_H - EDGE_PAD;
+pub const GRAPH_H: f32 = WINDOW_H - GRAPH_Y - FREQ_LABEL_SPACE - NODE_SLIDER_H - 16.0;
 pub const SIDE_X: f32 = GRAPH_X + GRAPH_W + DB_LABEL_GUTTER + SIDE_GAP;
 pub const NODE_ROW_GAP: f32 = 16.0;
 pub const NODE_ROW_Y: f32 = GRAPH_Y + GRAPH_H + FREQ_LABEL_SPACE + NODE_ROW_GAP;
@@ -493,7 +495,6 @@ impl GraphLayout {
     pub fn strength_handle_pos(&self, polarity: Polarity, strength_pct: f32) -> (f32, f32) {
         (self.gx, self.strength_line_y(polarity, strength_pct))
     }
-
 }
 
 mod draw;

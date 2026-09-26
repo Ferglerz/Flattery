@@ -76,5 +76,41 @@ impl FlatteryView {
             });
         }
     }
+}
 
+/// Match Damian's relative Shift-drag sensitivity and downward-increases-Q direction.
+pub(super) fn drag_strength_node(
+    node: &mut StrengthNode,
+    freq: f64,
+    weight: f64,
+    dy: f32,
+    shift: bool,
+) {
+    if shift {
+        node.q *= 1.0 + f64::from(dy) * 0.025;
+    } else {
+        node.freq = freq;
+        node.weight = weight;
+    }
+    node.sanitize();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shift_drag_changes_only_q_and_normal_drag_preserves_q() {
+        let mut node = StrengthNode::new(1, 1000.0, 1.0);
+        drag_strength_node(&mut node, 2000.0, 2.0, 20.0, true);
+        assert_eq!((node.freq, node.weight, node.q), (1000.0, 1.0, 9.0));
+        drag_strength_node(&mut node, 2000.0, 2.0, -20.0, true);
+        assert_eq!(node.q, 4.5);
+        drag_strength_node(&mut node, 2000.0, 2.0, 0.0, false);
+        assert_eq!((node.freq, node.weight, node.q), (2000.0, 2.0, 4.5));
+        drag_strength_node(&mut node, 2000.0, 2.0, -1000.0, true);
+        assert_eq!(node.q, crate::strength::MIN_NODE_Q);
+        drag_strength_node(&mut node, 2000.0, 2.0, 1000.0, true);
+        assert_eq!(node.q, crate::strength::MAX_NODE_Q);
+    }
 }

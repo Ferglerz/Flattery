@@ -1,23 +1,20 @@
 use super::*;
 
 impl FlatteryView {
-    pub(super) fn side_item_y(idx: usize) -> f32 {
-        let total: f32 = SIDE_STACK_HEIGHTS.iter().sum();
-        let gap = (GRAPH_H - total) / (SIDE_STACK_HEIGHTS.len() - 1) as f32;
-        let mut y = GRAPH_Y;
-        for h in SIDE_STACK_HEIGHTS.iter().take(idx) {
-            y += *h + gap;
-        }
-        y
+    pub(super) fn side_rect(idx: usize) -> (f32, f32, f32, f32) {
+        let last_bottom = Self::footer_button_row().1 - 12.0;
+        let row_step = (last_bottom - KNOB_SIZE - SIDE_Y) / 3.0;
+        (
+            SIDE_X + (SIDE_W - KNOB_SIZE) * 0.5,
+            SIDE_Y + idx as f32 * row_step,
+            KNOB_SIZE,
+            KNOB_SIZE,
+        )
     }
 
-    pub(super) fn side_rect(idx: usize) -> (f32, f32, f32, f32) {
-        (
-            SIDE_X,
-            Self::side_item_y(idx),
-            SIDE_W,
-            SIDE_STACK_HEIGHTS[idx],
-        )
+    pub(super) fn knob_value_rect(id: SliderId) -> (f32, f32, f32, f32) {
+        let r = Self::slider_rect(id);
+        pleasant_ui::draw::KnobLayout::new(r).value_rect(r.0 + 4.0, r.2 - 8.0)
     }
 
     pub(super) fn node_slider_rect(idx: usize) -> (f32, f32, f32, f32) {
@@ -42,36 +39,44 @@ impl FlatteryView {
     }
 
     pub(super) fn output_knob_rect() -> (f32, f32, f32, f32) {
-        let w = SIDE_W;
-        let h = 108.0;
-        let area_y = GRAPH_Y + GRAPH_H;
-        let area_h = WINDOW_H - EDGE_PAD - area_y;
-        let y = area_y + (area_h - h) * 0.5 + NODE_ROW_GAP;
-        (SIDE_X, y, w, h)
+        let node = Self::node_slider_rect(0);
+        (
+            SIDE_X + (SIDE_W - KNOB_SIZE) * 0.5,
+            node.1 + node.3 - KNOB_SIZE,
+            KNOB_SIZE,
+            KNOB_SIZE,
+        )
     }
 
     pub(super) fn output_knob_center() -> (f32, f32) {
         let r = Self::output_knob_rect();
-        (r.0 + r.2 * 0.5, r.1 + r.3 * 0.5)
+        {
+            let layout = pleasant_ui::draw::KnobLayout::new(r);
+            (layout.cx, layout.cy)
+        }
     }
 
     pub(super) fn output_knob_value_rect() -> (f32, f32, f32, f32) {
-        let (cx, cy) = Self::output_knob_center();
-        (cx - 45.0, cy + 38.0, 90.0, 20.0)
+        Self::knob_value_rect(SliderId::OutputGain)
     }
 
     pub(super) fn footer_button_row() -> (f32, f32, f32, f32) {
-        Self::side_rect(4)
+        let y = Self::output_knob_rect().1 - 12.0 - SIDE_BTN_H * 2.0 - FOOTER_BTN_GAP;
+        (
+            SIDE_X + (SIDE_W - KNOB_SIZE) * 0.5,
+            y,
+            KNOB_SIZE,
+            SIDE_BTN_H,
+        )
     }
 
     pub(super) fn fft_button_rect(&self) -> (f32, f32, f32, f32) {
-        let (x, y, w, h) = Self::footer_button_row();
-        (x, y, w - DOMAIN_BTN_W - FOOTER_BTN_GAP, h)
+        Self::footer_button_row()
     }
 
     pub(super) fn domain_button_rect(&self) -> (f32, f32, f32, f32) {
         let (x, y, w, h) = Self::footer_button_row();
-        (x + w - DOMAIN_BTN_W, y, DOMAIN_BTN_W, h)
+        (x, y + h + FOOTER_BTN_GAP, w, h)
     }
 
     pub(super) fn inside(px: f32, py: f32, rect: (f32, f32, f32, f32)) -> bool {
@@ -288,9 +293,18 @@ impl FlatteryView {
     }
 
     pub(super) fn readout_at(&self, x: f32, y: f32) -> Option<SliderId> {
-        if Self::inside(x, y, Self::output_knob_value_rect()) { return Some(SliderId::OutputGain); }
-        STACKED_SLIDERS.iter().copied().chain(NODE_SLIDERS.iter().copied().filter(|_| self.selected.is_some()))
-            .find(|id| Self::inside(x, y, slider_value_rect(Self::slider_rect(*id))))
+        STACKED_SLIDERS
+            .iter()
+            .copied()
+            .chain(std::iter::once(SliderId::OutputGain))
+            .find(|id| Self::inside(x, y, Self::knob_value_rect(*id)))
+            .or_else(|| {
+                NODE_SLIDERS
+                    .iter()
+                    .copied()
+                    .filter(|_| self.selected.is_some())
+                    .find(|id| Self::inside(x, y, slider_value_rect(Self::slider_rect(*id))))
+            })
     }
 
     pub(super) fn set_slider_from_x(&self, cx: &mut EventContext, id: SliderId, mouse_x: f32) {
@@ -376,5 +390,53 @@ impl FlatteryView {
             }
         }
     }
+}
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn startup_window_contains_the_complete_layout() {
+        let params = FlatteryParams::default();
+        let size = params.editor_state.inner_logical_size();
+        assert_eq!(size, (WINDOW_W as u32, WINDOW_H as u32));
+        let output = FlatteryView::output_knob_rect();
+        assert!(output.1 + output.3 + 32.0 <= size.1 as f32);
+    }
+
+    #[test]
+    fn graph_handles_have_clearance_inside_module() {
+        use pleasant_ui::handles::{tag_hit_rect, TagPointer};
+        let top = tag_hit_rect(GRAPH_X, GRAPH_Y, TagPointer::Down);
+        let left = tag_hit_rect(GRAPH_X, GRAPH_Y, TagPointer::Right);
+        assert!(top.1 >= 86.0 + 16.0);
+        assert!(left.0 >= 16.0 + 16.0);
+        assert!(SIDE_W - KNOB_SIZE <= 16.0);
+        let output = FlatteryView::output_knob_rect();
+        let right_padding = WINDOW_W - 16.0 - (output.0 + output.2);
+        let bottom_padding = WINDOW_H - 16.0 - (output.1 + output.3);
+        assert_eq!(right_padding, 20.0);
+        assert_eq!(bottom_padding, 20.0);
+    }
+
+    #[test]
+    fn vertical_knobs_and_buttons_clear_each_other_and_align_with_band_controls() {
+        let fft = FlatteryView::footer_button_row();
+        let output = FlatteryView::output_knob_rect();
+        let mut bottom = SIDE_Y - 8.0;
+        for id in STACKED_SLIDERS {
+            let r = FlatteryView::slider_rect(*id);
+            assert_eq!(r.0, output.0);
+            assert_eq!(r.2, fft.2);
+            assert!(r.1 >= bottom + 8.0);
+            bottom = r.1 + r.3;
+            let value = FlatteryView::knob_value_rect(*id);
+            assert!(value.1 > r.1 + r.3 * 0.5 && value.1 + value.3 <= bottom);
+        }
+        assert!(fft.1 >= bottom + 12.0);
+        assert!(fft.1 + SIDE_BTN_H * 2.0 + FOOTER_BTN_GAP + 12.0 <= output.1);
+        let band = FlatteryView::node_slider_rect(0);
+        assert_eq!(output.1 + output.3, band.1 + band.3);
+        assert!(output.1 + output.3 < WINDOW_H - 32.0);
+    }
 }

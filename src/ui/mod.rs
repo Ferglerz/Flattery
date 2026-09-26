@@ -2,8 +2,8 @@ mod adapter;
 mod controls;
 mod edit;
 mod events;
-mod nodes;
 pub mod graph;
+mod nodes;
 mod render;
 
 use crate::{
@@ -15,9 +15,8 @@ use crate::{
     },
     ui::graph::{
         snap_to_bin_center, GraphLayout, AXIS_STRIP_H, COLOR_BOOST, COLOR_BOOST_HOVER, COLOR_CUT,
-        COLOR_CUT_HOVER,
-        CURVE_HIT_DIST, EDGE_PAD, GRAPH_H, GRAPH_W, GRAPH_X, GRAPH_Y, NODE_ROW_GAP, SIDE_W, SIDE_X,
-        WINDOW_H, WINDOW_W,
+        COLOR_CUT_HOVER, CURVE_HIT_DIST, EDGE_PAD, GRAPH_H, GRAPH_W, GRAPH_X, GRAPH_Y,
+        NODE_ROW_GAP, SIDE_W, SIDE_X, SIDE_Y, WINDOW_H, WINDOW_W,
     },
 };
 use nih_plug::prelude::*;
@@ -52,17 +51,9 @@ fn prefs() -> &'static AppearanceStore {
 
 const HEADER_HEIGHT: f32 = 70.0;
 const THEME_BUTTON: (f32, f32, f32, f32) = (WINDOW_W - EDGE_PAD - 72.0, 22.0, 72.0, 26.0);
-const SIDE_SLIDER_H: f32 = 50.0;
+const KNOB_SIZE: f32 = 108.0;
 const SIDE_BTN_H: f32 = 28.0;
-const FOOTER_BTN_GAP: f32 = 6.0;
-const DOMAIN_BTN_W: f32 = 40.0;
-const SIDE_STACK_HEIGHTS: [f32; 5] = [
-    SIDE_SLIDER_H,
-    SIDE_SLIDER_H,
-    SIDE_SLIDER_H,
-    SIDE_SLIDER_H,
-    SIDE_BTN_H,
-];
+const FOOTER_BTN_GAP: f32 = 8.0;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SliderId {
@@ -93,7 +84,12 @@ const NODE_SLIDERS: &[SliderId] = &[
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum DragState {
-    Value { id: SliderId, start_x: f32, start_y: f32, start_norm: f32 },
+    Value {
+        id: SliderId,
+        start_x: f32,
+        start_y: f32,
+        start_norm: f32,
+    },
     LowCut {
         start_x: f32,
         start_val: f32,
@@ -126,9 +122,15 @@ enum DragState {
     StrengthNode {
         polarity: Polarity,
         id: u64,
+        last_y: f32,
     },
     Slider {
         id: SliderId,
+    },
+    Knob {
+        id: SliderId,
+        start_y: f32,
+        start_norm: f32,
     },
     OutputGainKnob {
         start_y: f32,
@@ -193,7 +195,6 @@ pub fn quantize_time_ms(val: f32) -> f32 {
         (val / 100.0).round() * 100.0
     }
 }
-
 
 impl View for FlatteryView {
     fn element(&self) -> Option<&'static str> {

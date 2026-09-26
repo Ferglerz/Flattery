@@ -29,6 +29,15 @@ impl FlatteryView {
             MUTED,
         );
 
+        let module = (
+            16.0,
+            HEADER_HEIGHT + 16.0,
+            WINDOW_W - 32.0,
+            WINDOW_H - HEADER_HEIGHT - 32.0,
+        );
+        d.rounded_rect(module.0, module.1, module.2, module.3, 6.0, PANEL);
+        d.outline(module, LINE);
+
         let srate = self.shared.sample_rate.load(Ordering::Relaxed) as f64;
         let fft_size = self.params.fft_size.value().size();
         let mut layout = self.layout;
@@ -249,15 +258,15 @@ impl FlatteryView {
             let r = Self::slider_rect(id);
             let (label, val_str, color) = self.slider_info(id);
             let n = self.get_slider_norm(id);
-            let val_r = slider_value_rect(r);
+            let val_r = Self::knob_value_rect(id);
             if let Some(edit) = &self.edit {
                 if edit.target == id {
-                    d.control(r, label, "", n, color);
+                    d.knob(r, label, "", n, color, self.params.bypass.value());
                     d.value_edit(edit, color);
                     continue;
                 }
             }
-            d.control(r, label, &val_str, n, color);
+            d.knob(r, label, &val_str, n, color, self.params.bypass.value());
             if self.edit.is_none() {
                 if let Some((hx, hy)) = self.idle_hover() {
                     if Self::inside(hx, hy, val_r) {
@@ -306,13 +315,7 @@ impl FlatteryView {
                         d.value_edit(edit, color);
                     }
                 } else {
-                    d.text_centered(
-                        val_r.0 + val_r.2 * 0.5,
-                        baseline,
-                        &val_str,
-                        15.0,
-                        color,
-                    );
+                    d.text_centered(val_r.0 + val_r.2 * 0.5, baseline, &val_str, 15.0, color);
                     if let Some((hx, hy)) = self.idle_hover() {
                         if Self::inside(hx, hy, val_r) {
                             d.value_underline(val_r, color);
@@ -421,4 +424,3 @@ fn draw_corner_icon(d: &mut Draw, r: (f32, f32, f32, f32), inward: bool, hot: bo
         );
     }
 }
-
