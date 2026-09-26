@@ -16,8 +16,8 @@ impl FlatteryView {
             self.font.get(),
         );
 
-        d.rect(0.0, 0.0, WINDOW_W, WINDOW_H, BG);
-        d.rect(0.0, 0.0, WINDOW_W, HEADER_HEIGHT, PANEL);
+        d.rounded_rect(0.0, 0.0, WINDOW_W, WINDOW_H, 0.0, BG);
+        d.rounded_rect(0.0, 0.0, WINDOW_W, HEADER_HEIGHT, 0.0, PANEL);
         d.text(36.0, 44.0, "FLATTERY", 24.0, GOLD);
         d.text(192.0, 44.0, "SPECTRAL LEVELER & SHAPER", 13.0, TEXT);
 

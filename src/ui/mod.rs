@@ -202,7 +202,9 @@ impl View for FlatteryView {
     }
 
     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+        let was_editing = self.edit.is_some();
         self.handle_event(cx, event);
+        pleasant_ui::value_edit::sync_text_input(cx, was_editing, self.edit.is_some());
     }
 
     fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
