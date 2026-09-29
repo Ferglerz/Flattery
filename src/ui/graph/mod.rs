@@ -24,7 +24,7 @@ pub const GRAPH_W: f32 = WINDOW_W - GRAPH_X - DB_LABEL_GUTTER - SIDE_GAP - SIDE_
 pub const FREQ_LABEL_SPACE: f32 = 26.0;
 /// Selected-node strip that replaces the frequency-axis labels.
 pub const AXIS_STRIP_H: f32 = 40.0;
-pub const NODE_SLIDER_H: f32 = 50.0;
+pub const NODE_SLIDER_H: f32 = 50.0 + pleasant_ui::value_edit::SLIDER_SPACING_EXTRA;
 pub const GRAPH_H: f32 = WINDOW_H - GRAPH_Y - FREQ_LABEL_SPACE - NODE_SLIDER_H - 16.0;
 pub const SIDE_X: f32 = GRAPH_X + GRAPH_W + DB_LABEL_GUTTER + SIDE_GAP;
 pub const NODE_ROW_GAP: f32 = 16.0;

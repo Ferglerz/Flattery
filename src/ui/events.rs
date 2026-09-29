@@ -26,7 +26,7 @@ impl FlatteryView {
                             id,
                             (self.get_slider_norm(id) + step).clamp(0.0, 1.0),
                         );
-                        meta.consume();
+                        nih_plug_vizia::consume_window_event(cx, window_event, meta);
                         cx.needs_redraw();
                         return;
                     }
@@ -56,7 +56,7 @@ impl FlatteryView {
                             let (_, value, _) = self.slider_info(press.target);
                             self.start_edit(cx, press.target, press.rect, value);
                         }
-                        meta.consume();
+                        nih_plug_vizia::consume_window_event(cx, window_event, meta);
                         cx.needs_redraw();
                         return;
                     }
@@ -77,7 +77,7 @@ impl FlatteryView {
                         if !cx.modifiers().command() && c.is_ascii() && !c.is_control() {
                             self.edit.as_mut().unwrap().insert(&c.to_string());
                         }
-                        meta.consume();
+                        nih_plug_vizia::consume_window_event(cx, window_event, meta);
                         cx.needs_redraw();
                         return;
                     }
@@ -99,7 +99,7 @@ impl FlatteryView {
                                 }
                             }
                         }
-                        meta.consume();
+                        nih_plug_vizia::consume_window_event(cx, window_event, meta);
                         cx.needs_redraw();
                         return;
                     }
@@ -107,18 +107,18 @@ impl FlatteryView {
                         let edit_rect = self.edit.as_ref().unwrap().rect;
                         if Self::inside(mouse_x, mouse_y, edit_rect) {
                             self.edit.as_mut().unwrap().handle_mouse_down(mouse_x);
-                            meta.consume();
+                            nih_plug_vizia::consume_window_event(cx, window_event, meta);
                             cx.needs_redraw();
                             return;
                         }
                         self.commit_edit(cx);
-                        meta.consume();
+                        nih_plug_vizia::consume_window_event(cx, window_event, meta);
                         cx.needs_redraw();
                         return;
                     }
                     WindowEvent::MouseDoubleClick(MouseButton::Left) => {
                         self.edit.as_mut().unwrap().select_all();
-                        meta.consume();
+                        nih_plug_vizia::consume_window_event(cx, window_event, meta);
                         cx.needs_redraw();
                         return;
                     }
@@ -133,7 +133,7 @@ impl FlatteryView {
                 WindowEvent::KeyDown(Code::Delete | Code::Backspace, _) => {
                     if self.selected.is_some() {
                         self.delete_selected();
-                        meta.consume();
+                        nih_plug_vizia::consume_window_event(cx, window_event, meta);
                         cx.needs_redraw();
                     }
                 }
@@ -154,7 +154,7 @@ impl FlatteryView {
                         ) {
                             self.selected = Some((polarity, id));
                             self.delete_selected();
-                            meta.consume();
+                            nih_plug_vizia::consume_window_event(cx, window_event, meta);
                             cx.needs_redraw();
                             return;
                         }
@@ -610,7 +610,7 @@ impl FlatteryView {
                                         );
                                     }
                                 });
-                                meta.consume();
+                                nih_plug_vizia::consume_window_event(cx, window_event, meta);
                                 cx.needs_redraw();
                                 return;
                             }
@@ -625,7 +625,7 @@ impl FlatteryView {
                                         node.radius = next;
                                     }
                                 });
-                                meta.consume();
+                                nih_plug_vizia::consume_window_event(cx, window_event, meta);
                                 cx.needs_redraw();
                                 return;
                             }
@@ -638,7 +638,7 @@ impl FlatteryView {
                                     self.params.neighbor_radius.as_ptr(),
                                     norm,
                                 );
-                                meta.consume();
+                                nih_plug_vizia::consume_window_event(cx, window_event, meta);
                                 cx.needs_redraw();
                             }
                         }

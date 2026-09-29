@@ -67,5 +67,4 @@ impl GraphLayout {
         let line_hit = (x - cut_x).abs() <= HIT_DIST && y >= self.gy && y <= self.gy + self.gh;
         line_hit || tag_contains(cut_x, self.gy, TagPointer::Down, x, y)
     }
-
 }

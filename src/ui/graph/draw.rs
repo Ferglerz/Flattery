@@ -64,7 +64,9 @@ impl GraphLayout {
                 if end < self.min_freq || start > self.max_freq {
                     continue;
                 }
-                let x0 = self.freq_to_x(start.max(self.min_freq)).clamp(self.gx, right);
+                let x0 = self
+                    .freq_to_x(start.max(self.min_freq))
+                    .clamp(self.gx, right);
                 let x1 = self.freq_to_x(end.min(self.max_freq)).clamp(self.gx, right);
                 let w = x1 - x0;
                 if w > 0.2 {
@@ -537,5 +539,4 @@ impl GraphLayout {
         d.line(high_x, self.gy, high_x, self.gy + self.gh, color_high, 2.5);
         d.tag_handle(high_x, self.gy, TagPointer::Down, color_high);
     }
-
 }

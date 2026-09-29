@@ -57,9 +57,11 @@ pub struct Engine {
     prepared_analyzers: Vec<FftAnalyzer>,
     leveler: LevelingProcessor,
     filter_bank: FilterBank,
+    filter_bank_r: FilterBank,
     window_samples_l: Vec<f64>,
     window_samples_r: Vec<f64>,
     target_gains: Vec<f64>,
+    target_gains_r: Vec<f64>,
     boost_weights: Vec<f64>,
     cut_weights: Vec<f64>,
     boost_radii: Vec<usize>,
@@ -68,6 +70,7 @@ pub struct Engine {
     cut_nodes: Arc<[StrengthNode]>,
     last_output_gain_db: f64,
     output_gain_linear: f64,
+    mid_side: bool,
 }
 
 impl Engine {
@@ -78,6 +81,8 @@ impl Engine {
 
         let mut filter_bank = FilterBank::new();
         filter_bank.init_frequencies(fft_size, sample_rate);
+        let mut filter_bank_r = FilterBank::new();
+        filter_bank_r.init_frequencies(fft_size, sample_rate);
         let prepared_analyzers = FFT_SIZES
             .into_iter()
             .filter(|size| *size != fft_size)
@@ -101,9 +106,11 @@ impl Engine {
             prepared_analyzers,
             leveler: LevelingProcessor::new(),
             filter_bank,
+            filter_bank_r,
             window_samples_l: vec![0.0; MAX_FFT_SIZE],
             window_samples_r: vec![0.0; MAX_FFT_SIZE],
             target_gains: vec![1.0; MAX_FFT_SIZE / 2],
+            target_gains_r: vec![1.0; MAX_FFT_SIZE / 2],
             boost_weights: vec![1.0; MAX_FFT_SIZE / 2],
             cut_weights: vec![1.0; MAX_FFT_SIZE / 2],
             boost_radii: vec![1; MAX_FFT_SIZE / 2],
@@ -112,6 +119,7 @@ impl Engine {
             cut_nodes,
             last_output_gain_db: 0.0,
             output_gain_linear: 1.0,
+            mid_side: false,
         }
     }
 
@@ -123,6 +131,7 @@ impl Engine {
         self.analyzer.reset();
         self.leveler.reset();
         self.filter_bank.reset();
+        self.filter_bank_r.reset();
         self.hop_counter = 0;
         if let Ok(mut lock) = self.shared.spectrum_mags_db.try_write() {
             lock.fill(-120.0);
@@ -152,12 +161,15 @@ impl Engine {
         self.hop_counter = 0;
         self.filter_bank
             .init_frequencies(new_size, self.sample_rate);
+        self.filter_bank_r
+            .init_frequencies(new_size, self.sample_rate);
         self.shared.fft_size.store(new_size, Ordering::Relaxed);
     }
 
     pub fn set_sample_rate(&mut self, srate: f64) {
         self.sample_rate = srate;
         self.filter_bank.init_frequencies(self.fft_size, srate);
+        self.filter_bank_r.init_frequencies(self.fft_size, srate);
         self.shared
             .sample_rate
             .store(srate as f32, Ordering::Relaxed);
@@ -166,6 +178,13 @@ impl Engine {
     pub fn tick(&mut self, in_l: f64, in_r: f64, settings: &EngineSettings) -> (f64, f64) {
         if settings.fft_size != self.fft_size {
             self.set_fft_size(settings.fft_size);
+        }
+        if settings.mid_side != self.mid_side {
+            self.mid_side = settings.mid_side;
+            self.analyzer.reset();
+            self.leveler.reset();
+            self.filter_bank.reset();
+            self.filter_bank_r.reset();
         }
 
         let bypassed = settings.bypassed;
@@ -285,18 +304,9 @@ impl Engine {
             let filter_count = self.filter_bank.filters.len();
 
             let tilt_amount = tilt * 0.01;
-            let is_linked = stereo_link >= 99.5;
-
             for i in 0..filter_count {
                 let center_hz = self.filter_bank.filters[i].center_hz;
                 let bin_idx = ((center_hz / bin_hz.max(1e-6)).floor() as usize).min(half - 1);
-
-                let raw_gain_db = if is_linked {
-                    self.leveler.smoothed_gain_db_link[bin_idx]
-                } else {
-                    0.5 * (self.leveler.smoothed_gain_db_l[bin_idx]
-                        + self.leveler.smoothed_gain_db_r[bin_idx])
-                };
 
                 let tilt_mult_scaled = calculate_tilt_multiplier_scaled(
                     center_hz,
@@ -304,21 +314,40 @@ impl Engine {
                     tilt_amount,
                     self.sample_rate,
                 );
-                let tilted_gain_db =
-                    (raw_gain_db * tilt_mult_scaled).clamp(-max_cut_db, max_boost_db);
-                let tilted_gain_lin = db_to_linear(tilted_gain_db);
-                let compensated_gain_lin =
-                    apply_tilt_compensation(tilted_gain_lin, tilt_mult_scaled, tilt_amount);
-
-                self.target_gains[i] = compensated_gain_lin;
+                // The leveler already blends each channel toward the linked target.
+                for (target, raw_gain_db) in [
+                    (
+                        &mut self.target_gains[i],
+                        self.leveler.smoothed_gain_db_l[bin_idx],
+                    ),
+                    (
+                        &mut self.target_gains_r[i],
+                        self.leveler.smoothed_gain_db_r[bin_idx],
+                    ),
+                ] {
+                    let tilted_gain_db =
+                        (raw_gain_db * tilt_mult_scaled).clamp(-max_cut_db, max_boost_db);
+                    *target = apply_tilt_compensation(
+                        db_to_linear(tilted_gain_db),
+                        tilt_mult_scaled,
+                        tilt_amount,
+                    );
+                }
             }
 
             if str_boost == 0.0 && str_cut == 0.0 {
                 self.target_gains[..filter_count].fill(1.0);
+                self.target_gains_r[..filter_count].fill(1.0);
             }
 
             self.filter_bank.set_filter_gains(
                 &self.target_gains[..filter_count],
+                self.sample_rate,
+                low_cut_hz,
+                high_cut_hz,
+            );
+            self.filter_bank_r.set_filter_gains(
+                &self.target_gains_r[..filter_count],
                 self.sample_rate,
                 low_cut_hz,
                 high_cut_hz,
@@ -339,8 +368,14 @@ impl Engine {
             }
             if let Ok(mut lock) = self.shared.filter_display.try_write() {
                 lock.clear();
-                for f in &self.filter_bank.filters {
-                    lock.push((f.center_hz as f32, linear_to_db(f.gain_linear) as f32));
+                for (l, r) in self
+                    .filter_bank
+                    .filters
+                    .iter()
+                    .zip(&self.filter_bank_r.filters)
+                {
+                    let db = 0.5 * (linear_to_db(l.gain_linear) + linear_to_db(r.gain_linear));
+                    lock.push((l.center_hz as f32, db as f32));
                 }
             }
         }
@@ -349,7 +384,18 @@ impl Engine {
             return (delayed_l, delayed_r);
         }
 
-        let (wet_l, wet_r) = self.filter_bank.process(delayed_l, delayed_r);
+        let (domain_l, domain_r) = if self.mid_side {
+            (0.5 * (delayed_l + delayed_r), 0.5 * (delayed_l - delayed_r))
+        } else {
+            (delayed_l, delayed_r)
+        };
+        let filtered_l = self.filter_bank.process_mono(domain_l);
+        let filtered_r = self.filter_bank_r.process_mono(domain_r);
+        let (wet_l, wet_r) = if self.mid_side {
+            (filtered_l + filtered_r, filtered_l - filtered_r)
+        } else {
+            (filtered_l, filtered_r)
+        };
         if output_gain_db != self.last_output_gain_db {
             self.output_gain_linear = db_to_linear(output_gain_db);
             self.last_output_gain_db = output_gain_db;

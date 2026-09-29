@@ -125,6 +125,20 @@ impl FilterBank {
     }
 
     #[inline(always)]
+    pub fn process_mono(&mut self, input: f64) -> f64 {
+        if self.all_unity {
+            return input;
+        }
+        let mut sum = 0.0;
+        for filter in &mut self.filters[self.active_start..self.active_end] {
+            if (filter.gain_linear - 1.0).abs() >= 0.001 {
+                sum += filter.state_l.process(input, &filter.coeffs) - input;
+            }
+        }
+        input + sum
+    }
+
+    #[inline(always)]
     pub fn process(&mut self, in_l: f64, in_r: f64) -> (f64, f64) {
         if self.all_unity {
             return (in_l, in_r);

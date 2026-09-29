@@ -21,13 +21,7 @@ impl FlatteryView {
         d.text(36.0, 44.0, "FLATTERY", 24.0, GOLD);
         d.text(192.0, 44.0, "SPECTRAL LEVELER & SHAPER", 13.0, TEXT);
 
-        let is_light = prefs().light();
-        d.button(
-            THEME_BUTTON,
-            if is_light { "LIGHT" } else { "DARK" },
-            false,
-            MUTED,
-        );
+        d.appearance_button(THEME_BUTTON, prefs().label());
 
         let module = (
             16.0,
@@ -270,7 +264,11 @@ impl FlatteryView {
             if self.edit.is_none() {
                 if let Some((hx, hy)) = self.idle_hover() {
                     if Self::inside(hx, hy, val_r) {
-                        d.value_underline(val_r, color);
+                        d.value_underline(
+                            val_r,
+                            pleasant_ui::draw::KnobLayout::new(r).value_y,
+                            color,
+                        );
                     }
                 }
             }
@@ -295,7 +293,11 @@ impl FlatteryView {
             if self.edit.is_none() {
                 if let Some((hx, hy)) = self.idle_hover() {
                     if Self::inside(hx, hy, val_r) {
-                        d.value_underline(val_r, color);
+                        d.value_underline(
+                            val_r,
+                            pleasant_ui::draw::KnobLayout::new(knob_r).value_y,
+                            color,
+                        );
                     }
                 }
             }
@@ -318,13 +320,13 @@ impl FlatteryView {
                     d.text_centered(val_r.0 + val_r.2 * 0.5, baseline, &val_str, 15.0, color);
                     if let Some((hx, hy)) = self.idle_hover() {
                         if Self::inside(hx, hy, val_r) {
-                            d.value_underline(val_r, color);
+                            d.value_underline(val_r, baseline, color);
                         }
                     }
                 }
                 let bar_x = r.0 + 8.0;
                 let bar_w = r.2 - 16.0;
-                let bar_y = r.1 + 24.0;
+                let bar_y = r.1 + 24.0 + pleasant_ui::value_edit::SLIDER_SPACING_EXTRA;
                 d.rect(bar_x, bar_y, bar_w, 5.0, LINE);
                 d.rect(bar_x, bar_y, bar_w * n.clamp(0.0, 1.0), 5.0, color);
             }

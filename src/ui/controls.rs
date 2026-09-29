@@ -21,7 +21,12 @@ impl FlatteryView {
         let gap = 8.0;
         let w = (GRAPH_W - gap * 3.0) / 4.0;
         let x = GRAPH_X + idx as f32 * (w + gap);
-        (x, GRAPH_Y + GRAPH_H + NODE_ROW_GAP, w, AXIS_STRIP_H)
+        (
+            x,
+            GRAPH_Y + GRAPH_H + NODE_ROW_GAP,
+            w,
+            AXIS_STRIP_H + pleasant_ui::value_edit::SLIDER_SPACING_EXTRA,
+        )
     }
 
     pub(super) fn slider_rect(id: SliderId) -> (f32, f32, f32, f32) {

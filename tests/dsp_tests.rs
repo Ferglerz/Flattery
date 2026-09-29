@@ -153,6 +153,101 @@ fn test_engine_audio_stream_no_nans() {
     }
 }
 
+fn channel_response(stereo_link: f64, mid_side: bool) -> (f64, f64) {
+    let mut engine = Engine::new(Arc::new(Shared::new()), 44100.0);
+    let mut settings = FlatteryParams::default().process_settings();
+    settings.stereo_link = stereo_link;
+    settings.mid_side = mid_side;
+    settings.boost_strength = 0.0;
+    settings.cut_strength = 100.0;
+    settings.max_cut_db = 12.0;
+    settings.minimum_operating_db = -40.0;
+    settings.maximum_operating_db = 0.0;
+    settings.input_rms_ms = 0.0;
+    settings.attack_ms = 0.1;
+    settings.release_ms = 0.1;
+    settings.neighbor_radius = 3;
+    settings.tilt = 0.0;
+    let mut energy_l = 0.0;
+    let mut energy_r = 0.0;
+    for i in 0..16000 {
+        let tone = (std::f64::consts::TAU * 1000.0 * i as f64 / 44100.0).sin();
+        let l = 0.4 * tone;
+        let r = 0.0001 * tone;
+        let input = if mid_side { (l + r, l - r) } else { (l, r) };
+        let out = engine.tick(input.0, input.1, &settings);
+        if i >= 12000 {
+            let (l, r) = if mid_side {
+                (0.5 * (out.0 + out.1), 0.5 * (out.0 - out.1))
+            } else {
+                out
+            };
+            energy_l += (l / 0.4).powi(2);
+            energy_r += (r / 0.0001).powi(2);
+        }
+    }
+    ((energy_l / 4000.0).sqrt(), (energy_r / 4000.0).sqrt())
+}
+
+#[test]
+fn test_stereo_link_preserves_independent_channel_gains() {
+    let independent = channel_response(0.0, false);
+    let partial = channel_response(50.0, false);
+    let linked = channel_response(100.0, false);
+    assert!(
+        independent.1 - independent.0 > 0.05,
+        "Unlinked channel responses: {independent:?}"
+    );
+    assert!(
+        (linked.0 - linked.1).abs() < 1e-10,
+        "Linked channel responses: {linked:?}"
+    );
+    assert!(
+        (partial.1 - partial.0).abs() > 0.01,
+        "Partial link must retain channel differences: {partial:?}"
+    );
+    assert!((partial.1 - partial.0).abs() < (independent.1 - independent.0).abs());
+}
+
+#[test]
+fn test_mid_side_filters_the_analyzed_domain() {
+    let stereo = channel_response(0.0, false);
+    let mid_side = channel_response(0.0, true);
+    assert!(
+        (stereo.0 - mid_side.0).abs() < 1e-10,
+        "Mid response differs from independent L: {mid_side:?} vs {stereo:?}"
+    );
+    assert!(
+        (stereo.1 - mid_side.1).abs() < 1e-10,
+        "Side response differs from independent R: {mid_side:?} vs {stereo:?}"
+    );
+    assert!(mid_side.1 - mid_side.0 > 0.05);
+}
+
+#[test]
+fn test_mid_side_only_content_preserves_channel_polarity() {
+    for side_only in [false, true] {
+        let mut engine = Engine::new(Arc::new(Shared::new()), 44100.0);
+        let mut settings = FlatteryParams::default().process_settings();
+        settings.mid_side = true;
+        settings.stereo_link = 0.0;
+        let mut energy = 0.0;
+        for i in 0..4096 {
+            let input = 0.4 * (std::f64::consts::TAU * 1000.0 * i as f64 / 44100.0).sin();
+            let right = if side_only { -input } else { input };
+            let (l, r) = engine.tick(input, right, &settings);
+            assert!(l.is_finite() && r.is_finite());
+            let error = if side_only { l + r } else { l - r };
+            assert!(
+                error.abs() < 1e-12,
+                "Domain leaked for side_only={side_only}: {l}, {r}"
+            );
+            energy += l * l;
+        }
+        assert!(energy > 1.0);
+    }
+}
+
 #[test]
 fn test_output_gain_change_takes_effect_on_next_sample() {
     let shared = Arc::new(Shared::new());
